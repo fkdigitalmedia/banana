@@ -1,0 +1,30 @@
+---
+import BaseLayout from './BaseLayout.astro';
+
+interface Props {
+  recipe: any;
+  jsonLd?: any;
+  canonical?: string;
+  noindex?: boolean;
+}
+
+const { recipe, jsonLd, canonical, noindex } = Astro.props;
+---
+
+<BaseLayout 
+  title={recipe.seo_title || `${recipe.title} - BananaBread`}
+  description={recipe.meta_description || recipe.description || `Make delicious ${recipe.title} with this tested recipe.`}
+  canonical={canonical}
+  noindex={noindex}
+  og={{
+    title: recipe.seo_title || recipe.title,
+    description: recipe.meta_description || recipe.description,
+    image: recipe.hero_image_key ? `/api/image/${recipe.hero_image_key}` : (recipe.original_image_url || '/favicon.svg'),
+    type: 'article'
+  }}
+  jsonLd={jsonLd}
+>
+  <article>
+    <slot />
+  </article>
+</BaseLayout>

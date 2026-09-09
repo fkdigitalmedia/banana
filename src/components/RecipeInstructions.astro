@@ -1,0 +1,77 @@
+---
+interface Instruction {
+  step_number: number;
+  instruction: string;
+}
+
+interface Props {
+  instructions: Instruction[];
+}
+
+const { instructions } = Astro.props;
+---
+
+<section class="recipe-instructions">
+  <h2>Instructions</h2>
+  <ol class="instructions-list">
+    {instructions.map((step) => (
+      <li class="instruction-step">
+        <span class="step-number">{String(step.step_number).padStart(2, '0')}</span>
+        <p class="step-text">{step.instruction}</p>
+      </li>
+    ))}
+  </ol>
+</section>
+
+<style>
+  .recipe-instructions {
+    margin: 3rem 0;
+  }
+  
+  .recipe-instructions h2 {
+    margin-bottom: 2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .instructions-list {
+    list-style: none;
+    padding: 0;
+    counter-reset: step-counter;
+  }
+  
+  .instruction-step {
+    display: flex;
+    margin-bottom: 2rem;
+    align-items: flex-start;
+  }
+  
+  .step-number {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--primary);
+    color: white;
+    font-weight: bold;
+    flex-shrink: 0;
+    margin-right: 1.25rem;
+    margin-top: 0.1rem;
+    font-family: var(--font-heading);
+  }
+  
+  .step-text {
+    font-size: 1.125rem;
+    line-height: 1.7;
+    margin: 0;
+    color: var(--text-primary);
+  }
+  
+  @media (max-width: 768px) {
+    .step-text {
+      font-size: 1rem;
+    }
+  }
+</style>

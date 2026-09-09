@@ -1,0 +1,110 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Search from '../components/Search.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+
+const title = "Recipe Not Found (404) — BananaBread";
+const description = "The recipe you are looking for does not exist or may have been moved.";
+---
+
+<BaseLayout title={title} description={description} noindex={true}>
+  <div class="container not-found-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'Page Not Found' }
+    ]} />
+
+    <div class="not-found-card">
+      <span class="icon-404">🍞</span>
+      <h1>Recipe Not Found</h1>
+      <p>We searched the entire kitchen pantry, but we couldn't find the recipe or page you're looking for.</p>
+      
+      <div class="search-box">
+        <p class="search-prompt">Search for another delicious recipe:</p>
+        <Search />
+      </div>
+
+      <div class="quick-links">
+        <a href="/" class="btn-primary">← Return to Homepage</a>
+        <a href="/recipes/" class="btn-secondary">Browse All Recipes</a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .not-found-container {
+    max-width: 750px;
+    margin: 0 auto;
+    padding: 2rem 1rem 5rem 1rem;
+    min-height: 60vh;
+  }
+
+  .not-found-card {
+    text-align: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 4rem 2rem;
+    margin-top: 2rem;
+  }
+
+  .icon-404 {
+    font-size: 4rem;
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .not-found-card h1 {
+    font-family: 'Georgia', serif;
+    font-size: 2.75rem;
+    color: var(--text-primary);
+    margin: 0 0 1rem 0;
+  }
+
+  .not-found-card p {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    max-width: 500px;
+    margin: 0 auto 2.5rem auto;
+    line-height: 1.6;
+  }
+
+  .search-box {
+    max-width: 480px;
+    margin: 0 auto 2.5rem auto;
+  }
+  .search-prompt {
+    font-size: 0.9rem !important;
+    font-weight: 600;
+    color: var(--text-primary) !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .quick-links {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: #6F370F; }
+  .btn-secondary {
+    background: white;
+    color: var(--primary);
+    border: 1px solid var(--border);
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .btn-secondary:hover { background: #FDE8D3; }
+</style>

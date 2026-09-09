@@ -1,0 +1,478 @@
+---
+export const prerender = false;
+
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { detectOrphanRecipes, invalidateRelatedCache } from '../../../lib/seo/linking';
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+
+let report = {
+  total_published: 0,
+  orphan_count: 0,
+  healthy_count: 0,
+  average_inbound_links: 0,
+  recipes: [] as any[]
+};
+
+let errorMsg = '';
+let successMsg = '';
+
+// Handle manual cache refresh action
+if (Astro.request.method === 'POST' && db) {
+  try {
+    await invalidateRelatedCache(db);
+    successMsg = 'Internal link cache successfully cleared and recomputed.';
+  } catch (err: any) {
+    errorMsg = err.message || 'Failed to refresh cache.';
+  }
+}
+
+if (db) {
+  try {
+    report = await detectOrphanRecipes(db);
+  } catch (err: any) {
+    errorMsg = err.message || 'Failed to analyze internal links.';
+  }
+}
+---
+
+<AdminLayout title="Internal Linking & Orphan Recipes" activePage="seo">
+  <div class="admin-page-container">
+    <div class="page-header">
+      <div>
+        <div class="breadcrumb">
+          <a href="/admin/">Dashboard</a> &rsaquo;
+          <a href="/admin/recipes/">Recipes</a> &rsaquo;
+          <span>Internal Linking & Orphans</span>
+        </div>
+        <h1 class="page-title">Internal Linking & Orphan Recipes</h1>
+        <p class="page-subtitle">
+          Deterministic link graph tracking inbound/outbound recipe connections to prevent orphaned content and optimize reader discovery.
+        </p>
+      </div>
+      <div class="header-actions">
+        <form method="POST">
+          <button type="submit" class="btn btn-secondary">
+            🔄 Recalculate Link Graph
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {successMsg && <div class="alert alert-success">{successMsg}</div>}
+    {errorMsg && <div class="alert alert-danger">{errorMsg}</div>}
+
+    <!-- Stat Metric Cards -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Published Recipes</div>
+        <div class="metric-value">{report.total_published}</div>
+        <div class="metric-hint">Active public articles</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Connected Recipes</div>
+        <div class="metric-value text-success">{report.healthy_count}</div>
+        <div class="metric-hint">Receiving &ge;1 inbound link</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Orphan Recipes</div>
+        <div class={`metric-value ${report.orphan_count > 0 ? 'text-warning' : 'text-success'}`}>
+          {report.orphan_count}
+        </div>
+        <div class="metric-hint">{report.orphan_count === 0 ? 'Zero orphans detected' : 'Needs internal links'}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Avg. Inbound Links</div>
+        <div class="metric-value text-primary">{report.average_inbound_links}</div>
+        <div class="metric-hint">Per published recipe</div>
+      </div>
+    </div>
+
+    <!-- Main Table -->
+    <div class="table-card">
+      <div class="table-header">
+        <h2 class="table-title">Published Recipes Link Graph</h2>
+        <span class="table-count">{report.recipes.length} recipes evaluated</span>
+      </div>
+
+      {report.recipes.length === 0 ? (
+        <div class="empty-state">
+          <p>No published recipes found in the database. Publish recipes to evaluate the internal linking structure.</p>
+        </div>
+      ) : (
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Recipe</th>
+                <th>Category</th>
+                <th>Inbound Links</th>
+                <th>Outbound Related</th>
+                <th>Status</th>
+                <th>Linking Recommendations</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.recipes.map((item) => (
+                <tr class={item.status === 'ORPHAN' ? 'row-orphan' : ''}>
+                  <td class="recipe-cell">
+                    <div class="recipe-title-group">
+                      <a href={`/admin/recipes/${item.id}/review`} class="recipe-name">
+                        {item.title}
+                      </a>
+                      <a href={`/${item.slug}/`} target="_blank" class="public-link-icon" title="View live page">
+                        ↗
+                      </a>
+                    </div>
+                    <span class="recipe-slug">/{item.slug}/</span>
+                  </td>
+                  <td>
+                    <span class="category-badge">{item.category_name}</span>
+                  </td>
+                  <td>
+                    <span class={`count-badge ${item.inbound_count === 0 ? 'badge-zero' : 'badge-active'}`}>
+                      {item.inbound_count} inbound
+                    </span>
+                    {item.inbound_from.length > 0 && (
+                      <div class="inbound-list">
+                        from: {item.inbound_from.slice(0, 2).map((src: any) => src.title).join(', ')}
+                        {item.inbound_from.length > 2 ? ` +${item.inbound_from.length - 2} more` : ''}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <span class="count-badge badge-neutral">
+                      {item.outbound_count} related
+                    </span>
+                  </td>
+                  <td>
+                    {item.status === 'ORPHAN' ? (
+                      <span class="status-pill status-orphan">⚠️ ORPHAN</span>
+                    ) : (
+                      <span class="status-pill status-healthy">✓ HEALTHY</span>
+                    )}
+                  </td>
+                  <td class="fix-cell">
+                    {item.status === 'ORPHAN' ? (
+                      <div class="orphan-fix-box">
+                        <strong class="fix-title">Suggested Link Sources:</strong>
+                        {item.suggested_fix_sources.length > 0 ? (
+                          <ul class="fix-list">
+                            {item.suggested_fix_sources.map((fix: any) => (
+                              <li>
+                                <a href={`/admin/recipes/${fix.id}/review`}>
+                                  {fix.title}
+                                </a>
+                                <span class="affinity-tag">affinity {fix.score}pts</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span class="no-suggestions">Publish more category-related recipes</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span class="healthy-text">Well connected ({item.inbound_count} pathways)</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .admin-page-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem;
+  }
+  .breadcrumb {
+    font-size: 0.82rem;
+    color: #6b7280;
+    margin-bottom: 0.35rem;
+  }
+  .breadcrumb a {
+    color: #4b5563;
+    text-decoration: none;
+  }
+  .breadcrumb a:hover {
+    text-decoration: underline;
+  }
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.75rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 0.25rem 0;
+  }
+  .page-subtitle {
+    font-size: 0.95rem;
+    color: #4b5563;
+    margin: 0;
+  }
+  .header-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+  .alert {
+    padding: 0.85rem 1.25rem;
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+  .alert-success {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+  .alert-danger {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+
+  /* Metrics Grid */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  .metric-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .metric-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+  }
+  .metric-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #111827;
+    line-height: 1;
+    margin-bottom: 0.35rem;
+  }
+  .metric-hint {
+    font-size: 0.82rem;
+    color: #9ca3af;
+  }
+  .text-success { color: #059669; }
+  .text-warning { color: #d97706; }
+  .text-primary { color: #8B4513; }
+
+  /* Table Card */
+  .table-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    overflow: hidden;
+  }
+  .table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .table-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0;
+  }
+  .table-count {
+    font-size: 0.85rem;
+    color: #6b7280;
+  }
+  .table-responsive {
+    overflow-x: auto;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.9rem;
+  }
+  .data-table th {
+    background: #f9fafb;
+    padding: 0.85rem 1.25rem;
+    font-weight: 600;
+    color: #4b5563;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .data-table td {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: top;
+  }
+  .row-orphan {
+    background: #fffbeb;
+  }
+  .recipe-cell {
+    min-width: 200px;
+  }
+  .recipe-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .recipe-name {
+    font-weight: 600;
+    color: #111827;
+    text-decoration: none;
+  }
+  .recipe-name:hover {
+    color: #8B4513;
+    text-decoration: underline;
+  }
+  .public-link-icon {
+    color: #9ca3af;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .public-link-icon:hover {
+    color: #8B4513;
+  }
+  .recipe-slug {
+    display: block;
+    font-size: 0.78rem;
+    color: #6b7280;
+    font-family: monospace;
+    margin-top: 0.2rem;
+  }
+  .category-badge {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  .count-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .badge-active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .badge-zero {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .badge-neutral {
+    background: #f3f4f6;
+    color: #374151;
+  }
+  .inbound-list {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.3rem;
+  }
+  .status-pill {
+    display: inline-block;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .status-healthy {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .status-orphan {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+  .fix-cell {
+    min-width: 250px;
+  }
+  .orphan-fix-box {
+    background: #ffffff;
+    border: 1px solid #fed7aa;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+  }
+  .fix-title {
+    display: block;
+    font-size: 0.78rem;
+    color: #9a3412;
+    margin-bottom: 0.35rem;
+  }
+  .fix-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    font-size: 0.8rem;
+  }
+  .fix-list li {
+    margin-bottom: 0.2rem;
+  }
+  .fix-list a {
+    color: #c2410c;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .fix-list a:hover {
+    text-decoration: underline;
+  }
+  .affinity-tag {
+    font-size: 0.7rem;
+    color: #78716c;
+    margin-left: 0.35rem;
+  }
+  .healthy-text {
+    font-size: 0.82rem;
+    color: #059669;
+  }
+  .empty-state {
+    padding: 3rem 1.5rem;
+    text-align: center;
+    color: #6b7280;
+  }
+  .btn {
+    padding: 0.55rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+  .btn-secondary:hover {
+    background: #e5e7eb;
+  }
+</style>

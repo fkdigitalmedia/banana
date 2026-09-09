@@ -1,0 +1,84 @@
+---
+interface Props {
+  prepTime?: number;
+  cookTime?: number;
+  totalTime?: number;
+  servings?: number | string;
+  yieldText?: string;
+  cuisine?: string;
+  category?: string;
+}
+
+const { prepTime, cookTime, totalTime, servings, yieldText, cuisine, category } = Astro.props;
+
+function formatTime(minutes: number | undefined) {
+  if (!minutes) return '-';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0 && m > 0) return `${h} hr ${m} min`;
+  if (h > 0) return `${h} hr`;
+  return `${m} min`;
+}
+---
+
+<div class="recipe-meta-grid">
+  <div class="meta-item">
+    <span class="meta-icon">⏱️</span>
+    <span class="meta-label">Prep Time</span>
+    <span class="meta-value">{formatTime(prepTime)}</span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-icon">🍳</span>
+    <span class="meta-label">Cook Time</span>
+    <span class="meta-value">{formatTime(cookTime)}</span>
+  </div>
+  <div class="meta-item">
+    <span class="meta-icon">⏰</span>
+    <span class="meta-label">Total Time</span>
+    <span class="meta-value">{formatTime(totalTime)}</span>
+  </div>
+  {yieldText && (
+    <div class="meta-item">
+      <span class="meta-icon">🍞</span>
+      <span class="meta-label">Yield</span>
+      <span class="meta-value">{yieldText}</span>
+    </div>
+  )}
+  <div class="meta-item">
+    <span class="meta-icon">🍽️</span>
+    <span class="meta-label">Servings</span>
+    <span class="meta-value">{servings || '-'}</span>
+  </div>
+  {cuisine && (
+    <div class="meta-item">
+      <span class="meta-icon">🌍</span>
+      <span class="meta-label">Cuisine</span>
+      <span class="meta-value">{cuisine}</span>
+    </div>
+  )}
+</div>
+
+<style>
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .meta-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .meta-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    font-weight: bold;
+    color: var(--text-secondary);
+    letter-spacing: 0.05em;
+  }
+  .meta-value {
+    font-size: 1rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+</style>

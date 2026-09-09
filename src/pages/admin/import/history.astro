@@ -1,0 +1,184 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { listBulkJobs } from '../../../lib/pipeline/bulk';
+
+const env = Astro.locals.runtime.env;
+const db = env.DB;
+
+const url = new URL(Astro.request.url);
+const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+const limit = 20;
+const offset = (page - 1) * limit;
+
+const jobs = db ? await listBulkJobs(db, limit, offset) : [];
+---
+
+<AdminLayout title="Bulk Import History" activePage="import">
+  <div class="history-container">
+    <div class="header-section">
+      <div class="title-row">
+        <div>
+          <h2>📦 Bulk Import Batches</h2>
+          <p class="subtitle">History of multi-recipe import batches, queue statuses, and outcomes.</p>
+        </div>
+        <div class="header-actions">
+          <a href="/admin/import/" class="btn-primary">+ New Import</a>
+        </div>
+      </div>
+    </div>
+
+    {jobs.length === 0 ? (
+      <div class="card empty-card">
+        <span class="empty-icon">📋</span>
+        <h3>No bulk import batches yet</h3>
+        <p>You haven't run any multi-recipe bulk jobs. Paste a list of URLs to get started!</p>
+        <a href="/admin/import/" class="btn-primary">Start Bulk Import</a>
+      </div>
+    ) : (
+      <div class="card table-card">
+        <table class="batch-table">
+          <thead>
+            <tr>
+              <th>Bulk ID</th>
+              <th>Date</th>
+              <th>Total URLs</th>
+              <th>Completed</th>
+              <th>Failed</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((job) => {
+              const statusClass = (job.status || 'queued').toLowerCase().replace(/_/g, '-');
+              const formattedDate = job.created_at ? new Date(job.created_at).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              }) : '—';
+
+              return (
+                <tr>
+                  <td><strong>#{job.id}</strong></td>
+                  <td class="text-muted">{formattedDate}</td>
+                  <td><strong>{job.total_count}</strong></td>
+                  <td class="text-success">{job.completed_count}</td>
+                  <td class={job.failed_count > 0 ? 'text-danger font-bold' : 'text-muted'}>
+                    {job.failed_count}
+                  </td>
+                  <td>
+                    <span class={`status-pill status-${statusClass}`}>
+                      {job.status.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td>
+                    <a href={`/admin/import/?bulkJobId=${job.id}`} class="btn-view-batch">
+                      View Batch ↗
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .history-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding-bottom: 4rem;
+  }
+  .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  .header-section h2 { margin: 0 0 0.5rem 0; color: #18181b; }
+  .subtitle { color: #71717a; margin: 0; font-size: 0.95rem; }
+
+  .btn-primary {
+    display: inline-block;
+    background: #8b4513;
+    color: white;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: #6f370f; }
+
+  .card {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .table-card { overflow-x: auto; }
+
+  .batch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+  .batch-table th {
+    background: #f8fafc;
+    padding: 0.85rem 1rem;
+    font-weight: 600;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .batch-table td {
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+  }
+  .batch-table tr:hover td { background: #fafafa; }
+
+  .text-muted { color: #64748b; font-size: 0.85rem; }
+  .text-success { color: #16a34a; font-weight: 600; }
+  .text-danger { color: #dc2626; }
+  .font-bold { font-weight: 700; }
+
+  .status-pill {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .status-queued { background: #f1f5f9; color: #475569; }
+  .status-processing { background: #e0f2fe; color: #0369a1; }
+  .status-completed { background: #dcfce7; color: #15803d; }
+  .status-completed-with-errors { background: #fef3c7; color: #b45309; }
+  .status-failed { background: #fee2e2; color: #b91c1c; }
+  .status-cancelled { background: #f3f4f6; color: #6b7280; }
+
+  .btn-view-batch {
+    color: #0284c7;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.85rem;
+  }
+  .btn-view-batch:hover { text-decoration: underline; }
+
+  .empty-card {
+    text-align: center;
+    padding: 4rem 2rem;
+  }
+  .empty-icon { font-size: 3rem; display: block; margin-bottom: 1rem; }
+  .empty-card h3 { margin: 0 0 0.5rem 0; color: #18181b; }
+  .empty-card p { color: #71717a; margin-bottom: 1.5rem; }
+</style>

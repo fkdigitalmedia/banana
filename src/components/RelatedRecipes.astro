@@ -1,0 +1,67 @@
+---
+import RecipeCard from './RecipeCard.astro';
+
+interface Props {
+  recipes: any[];
+  r2BaseUrl: string;
+}
+
+const { recipes, r2BaseUrl } = Astro.props;
+
+if (!recipes || recipes.length === 0) {
+  return null;
+}
+
+// Display 4 to 6 related recipes
+const displayRecipes = recipes.slice(0, 6);
+---
+
+<section class="related-recipes" aria-label="Related Recipes">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">Discover More</span>
+      <h2 class="section-title">You Might Also Enjoy</h2>
+    </div>
+    <div class="recipe-grid related-grid">
+      {displayRecipes.map((recipe) => (
+        <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .related-recipes {
+    margin: 4.5rem 0 2rem 0;
+    padding-top: 3.5rem;
+    border-top: 2px solid var(--border, #E8D5C4);
+  }
+  .section-header {
+    text-align: center;
+    margin-bottom: 2.25rem;
+  }
+  .eyebrow {
+    display: inline-block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent, #D2691E);
+    margin-bottom: 0.35rem;
+  }
+  .section-title {
+    margin: 0;
+    font-size: 2rem;
+    color: var(--text-primary, #2C1810);
+  }
+  .related-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.5rem;
+  }
+  @media (min-width: 768px) {
+    .related-grid {
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    }
+  }
+</style>

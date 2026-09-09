@@ -1,0 +1,102 @@
+---
+import { getRecipeImageUrl } from '../lib/image/storage';
+
+interface Props {
+  title: string;
+  description: string;
+  heroImageKey?: string | null;
+  originalImageUrl?: string | null;
+  r2BaseUrl?: string;
+}
+
+const { title, description, heroImageKey, originalImageUrl, r2BaseUrl } = Astro.props;
+const imageUrl = getRecipeImageUrl({ hero_image_key: heroImageKey, original_image_url: originalImageUrl }, r2BaseUrl);
+const altText = `Homemade ${title} freshly prepared and served`;
+---
+
+<header class="recipe-hero">
+  <div class="recipe-hero-content container">
+    <h1 class="recipe-hero-title">{title}</h1>
+    <p class="recipe-hero-description">{description}</p>
+  </div>
+  
+  <div class="recipe-hero-image-container container">
+    {imageUrl && imageUrl !== '/placeholder-recipe.svg' ? (
+      <img 
+        src={imageUrl} 
+        alt={altText} 
+        width="1024"
+        height="576"
+        loading="eager" 
+        fetchpriority="high"
+        class="recipe-hero-image" 
+      />
+    ) : (
+      <div class="recipe-hero-fallback">
+        <span class="fallback-icon">🍌</span>
+      </div>
+    )}
+  </div>
+</header>
+
+<style>
+  .recipe-hero {
+    text-align: center;
+    padding: 2.5rem 0 1.5rem 0;
+  }
+  
+  .recipe-hero-content {
+    max-width: 800px;
+    margin: 0 auto 2rem auto;
+  }
+  
+  .recipe-hero-title {
+    font-size: 2.5rem;
+    font-family: 'Georgia', serif;
+    color: var(--primary);
+    margin-bottom: 1rem;
+    line-height: 1.2;
+  }
+  
+  .recipe-hero-description {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+  }
+  
+  .recipe-hero-image-container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  
+  .recipe-hero-image {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 540px;
+    object-fit: cover;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+  
+  .recipe-hero-fallback {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 400px;
+    background: linear-gradient(135deg, var(--surface) 0%, var(--border) 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .fallback-icon {
+    font-size: 4rem;
+  }
+  
+  @media (min-width: 768px) {
+    .recipe-hero-title {
+      font-size: 3.25rem;
+    }
+  }
+</style>

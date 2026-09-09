@@ -1,0 +1,98 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+
+const title = "Recipe & Culinary Disclaimer — BananaBread";
+const description = "Culinary, food safety, allergy, and nutritional disclaimer for recipes published on BananaBread.";
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container page-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'Disclaimer' }
+    ]} />
+
+    <article class="legal-content prose">
+      <h1>Recipe & Culinary Disclaimer</h1>
+      <p class="updated-date">Last Updated: March 2026</p>
+      
+      <p class="lead">All recipes, cooking techniques, and kitchen guidance published on BananaBread are provided for informational, educational, and home culinary enjoyment.</p>
+
+      <h2>1. Cooking & Baking Outcomes</h2>
+      <p>While all recipes are editorially reviewed, standardized, and checked for internal consistency, individual baking and cooking results may vary. Outcomes can be affected by numerous external factors beyond our control, including:</p>
+      <ul>
+        <li>Variations in oven calibration, heating element types, and hotspot distributions.</li>
+        <li>Regional elevation, humidity, and ambient room temperature.</li>
+        <li>Differences in ingredient brands, protein content in flours, egg sizing, and moisture content in fresh produce (such as varying banana ripeness).</li>
+        <li>Baking pan materials (e.g., dark non-stick metal vs. light aluminum vs. ceramic or glass).</li>
+      </ul>
+
+      <h2>2. Ingredient Substitutions</h2>
+      <p>Any variation ideas or substitution tips provided in our guides are intended as helpful suggestions. Substituting ingredients (such as using gluten-free flour blends, alternative sweeteners, or dairy-free fats) inherently alters the moisture balance, chemical structure, and baking times. We recommend testing substitutions in small batches.</p>
+
+      <h2>3. Food Allergies & Dietary Restrictions</h2>
+      <p>BananaBread cannot guarantee that any recipe is free from specific allergens. Readers are strictly responsible for reviewing ingredient labels, cross-contamination warnings on packaged goods, and tailoring recipes to their own personal health requirements and severe dietary allergies.</p>
+
+      <h2>4. Food Safety & Handling</h2>
+      <p>Home cooks are responsible for exercising safe food handling practices at all times, including thoroughly washing produce, cooking poultry and meats to USDA-recommended minimum internal temperatures, and adhering to safe refrigeration and cooling procedures. BananaBread assumes no liability for foodborne illnesses or accidents resulting from improper kitchen safety.</p>
+
+      <h2>5. Nutritional Estimates</h2>
+      <p>Where nutritional calculations or macronutrient breakdowns are provided, they are software-generated estimates calculated based on standard ingredient databases. They are intended for general reference only and should not be relied upon as certified dietary, nutritional, or medical advice.</p>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-container {
+    padding: 2rem 1rem;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  .legal-content h1 {
+    font-size: 2.5rem;
+    color: var(--primary);
+    margin-bottom: 0.5rem;
+  }
+  
+  .updated-date {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    font-style: italic;
+    font-size: 0.95rem;
+  }
+
+  .lead {
+    font-size: 1.15rem;
+    line-height: 1.7;
+    color: var(--text-primary);
+    margin-bottom: 2rem;
+  }
+  
+  .legal-content h2 {
+    color: var(--primary);
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.4rem;
+  }
+  
+  .legal-content p {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    margin-bottom: 1.25rem;
+    color: var(--text-primary);
+  }
+
+  .legal-content ul {
+    margin-bottom: 1.5rem;
+    padding-left: 1.5rem;
+  }
+
+  .legal-content li {
+    font-size: 1rem;
+    line-height: 1.65;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+  }
+</style>

@@ -1,0 +1,91 @@
+---
+---
+<footer class="site-footer">
+  <div class="container footer-container">
+    <div class="footer-col">
+      <div class="footer-logo">🍌 BananaBread</div>
+      <p class="footer-tagline">Homemade Recipes Worth Making. Bringing warmth and joy to your kitchen.</p>
+    </div>
+    <div class="footer-col">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/recipes/">All Recipes</a></li>
+        <li><a href="/about/">About</a></li>
+        <li><a href="/contact/">Contact</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h3>Categories</h3>
+      <ul>
+        <li><a href="/recipes/bread/">Bread</a></li>
+        <li><a href="/recipes/baking/">Baking</a></li>
+        <li><a href="/recipes/desserts/">Desserts</a></li>
+        <li><a href="/recipes/breakfast/">Breakfast</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h3>Legal</h3>
+      <ul>
+        <li><a href="/privacy-policy/">Privacy Policy</a></li>
+        <li><a href="/terms/">Terms of Service</a></li>
+        <li><a href="/disclaimer/">Disclaimer</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container">
+      <p>&copy; {new Date().getFullYear()} BananaBread. All rights reserved.</p>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background-color: var(--surface);
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+    padding-top: 3rem;
+  }
+  .footer-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 2rem;
+    margin-bottom: 3rem;
+  }
+  .footer-logo {
+    font-family: var(--font-heading);
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary);
+    margin-bottom: 1rem;
+  }
+  .footer-tagline {
+    color: var(--text-secondary);
+  }
+  .footer-col h3 {
+    font-size: 1.125rem;
+    margin-bottom: 1rem;
+    color: var(--primary);
+  }
+  .footer-col ul {
+    list-style: none;
+    padding: 0;
+  }
+  .footer-col ul li {
+    margin-bottom: 0.5rem;
+  }
+  .footer-col ul li a {
+    color: var(--text-secondary);
+  }
+  .footer-col ul li a:hover {
+    color: var(--accent);
+  }
+  .footer-bottom {
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 0;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+</style>

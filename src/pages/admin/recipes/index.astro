@@ -1,0 +1,606 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { listRecipes, countRecipes } from '../../../lib/db/recipes';
+
+const env = Astro.locals.runtime.env;
+const db = env.DB;
+
+const url = new URL(Astro.request.url);
+const currentStatus = (url.searchParams.get('status') || 'all').toLowerCase();
+const currentQuality = (url.searchParams.get('quality') || 'all').toLowerCase();
+const searchQuery = url.searchParams.get('q') || '';
+const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+const pageSize = 20;
+const offset = (page - 1) * pageSize;
+
+const filterOpts = {
+  status: currentStatus === 'all' ? undefined : currentStatus,
+  quality: currentQuality === 'all' ? undefined : currentQuality,
+  search: searchQuery || undefined
+};
+
+const [recipes, totalCount] = await Promise.all([
+  listRecipes(db, { ...filterOpts, limit: pageSize, offset }),
+  countRecipes(db, filterOpts)
+]);
+
+const totalPages = Math.ceil(totalCount / pageSize) || 1;
+
+// Helper to build URL with search params
+function buildUrl(params: Record<string, string | number>) {
+  const next = new URL(Astro.request.url);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === '' || v === 'all') {
+      next.searchParams.delete(k);
+    } else {
+      next.searchParams.set(k, String(v));
+    }
+  });
+  return next.pathname + next.search;
+}
+---
+
+<AdminLayout title="Recipe Management" activePage="recipes">
+  <div class="header-actions">
+    <div>
+      <h2>Recipe Library ({totalCount})</h2>
+      <p class="subtitle">Search, review drafts, inspect fact quality, and publish recipes.</p>
+    </div>
+    <div class="header-btns">
+      <a href="/admin/import/" class="btn-primary">+ Import Recipe</a>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Search & Filter Controls -->
+  <div class="controls-card">
+    <form method="GET" action="/admin/recipes/" class="search-form">
+      <div class="search-input-group">
+        <input 
+          type="text" 
+          name="q" 
+          placeholder="Search by title, slug, or source URL..." 
+          value={searchQuery}
+          class="search-input"
+        />
+        {currentStatus !== 'all' && <input type="hidden" name="status" value={currentStatus} />}
+        {currentQuality !== 'all' && <input type="hidden" name="quality" value={currentQuality} />}
+        <button type="submit" class="btn-search">Search</button>
+        {searchQuery && (
+          <a href={buildUrl({ q: '', page: 1 })} class="btn-clear">Clear</a>
+        )}
+      </div>
+    </form>
+
+    <div class="filters-row">
+      <!-- Status Tabs -->
+      <div class="filter-tabs">
+        <a href={buildUrl({ status: 'all', page: 1 })} class={`filter-tab ${currentStatus === 'all' ? 'active' : ''}`}>All</a>
+        <a href={buildUrl({ status: 'draft', page: 1 })} class={`filter-tab ${currentStatus === 'draft' ? 'active' : ''}`}>Drafts</a>
+        <a href={buildUrl({ status: 'published', page: 1 })} class={`filter-tab ${currentStatus === 'published' ? 'active' : ''}`}>Published</a>
+        <a href={buildUrl({ status: 'processing', page: 1 })} class={`filter-tab ${currentStatus === 'processing' ? 'active' : ''}`}>Processing</a>
+        <a href={buildUrl({ status: 'imported', page: 1 })} class={`filter-tab ${currentStatus === 'imported' ? 'active' : ''}`}>Imported</a>
+        <a href={buildUrl({ status: 'failed', page: 1 })} class={`filter-tab ${currentStatus === 'failed' ? 'active' : ''}`}>Failed</a>
+      </div>
+
+      <!-- Quality Filter -->
+      <div class="quality-select-wrapper">
+        <label for="quality-filter" class="filter-label">Quality:</label>
+        <select 
+          id="quality-filter" 
+          class="select-filter"
+          onchange="window.location.href = this.value"
+        >
+          <option value={buildUrl({ quality: 'all', page: 1 })} selected={currentQuality === 'all'}>All Quality</option>
+          <option value={buildUrl({ quality: 'passed', page: 1 })} selected={currentQuality === 'passed'}>Passed (Score ≥ 80)</option>
+          <option value={buildUrl({ quality: 'review', page: 1 })} selected={currentQuality === 'review'}>Review Required</option>
+          <option value={buildUrl({ quality: 'failed', page: 1 })} selected={currentQuality === 'failed'}>Failed (Contradictions)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recipes Table -->
+  <div class="table-container">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Recipe</th>
+          <th>Status</th>
+          <th>Quality</th>
+          <th>Image</th>
+          <th>Updated</th>
+          <th class="text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {recipes.length === 0 ? (
+          <tr>
+            <td colspan="6" class="empty-state">
+              <div class="empty-state-inner">
+                <span class="empty-icon">🍳</span>
+                <h3>No recipes match your criteria</h3>
+                <p>
+                  {searchQuery 
+                    ? `No recipes found matching "${searchQuery}".`
+                    : currentStatus !== 'all' 
+                      ? `No recipes currently in "${currentStatus.toUpperCase()}" status.` 
+                      : 'Import your first recipe to start building your automated publication.'}
+                </p>
+                <div class="empty-actions">
+                  <a href="/admin/import/" class="btn-primary">+ Import Recipe</a>
+                  {(searchQuery || currentStatus !== 'all' || currentQuality !== 'all') && (
+                    <a href="/admin/recipes/" class="btn-secondary">Reset Filters</a>
+                  )}
+                </div>
+              </div>
+            </td>
+          </tr>
+        ) : (
+          recipes.map((recipe: any) => {
+            const score = recipe.quality_score ?? 100;
+            const qStatus = recipe.quality_status || (score >= 80 ? 'QUALITY_PASSED' : 'QUALITY_REVIEW');
+            const isHighQuality = qStatus === 'QUALITY_PASSED' && score >= 80;
+            const isReviewQuality = qStatus === 'QUALITY_REVIEW';
+
+            return (
+              <tr id={`recipe-row-${recipe.id}`}>
+                <td class="title-cell">
+                  <strong>{recipe.title}</strong>
+                  <span class="slug-text">/{recipe.slug}/</span>
+                  {recipe.source_url && (
+                    <a href={recipe.source_url} target="_blank" rel="noopener noreferrer" class="source-link">
+                      Source ↗
+                    </a>
+                  )}
+                </td>
+                <td>
+                  <span class={`status-badge status-${(recipe.status || 'imported').toLowerCase()}`}>
+                    {recipe.status}
+                  </span>
+                </td>
+                <td>
+                  <div class="quality-badge-group">
+                    <span class={`quality-pill ${isHighQuality ? 'quality-pass' : (isReviewQuality ? 'quality-review' : 'quality-fail')}`}>
+                      {score}/100
+                    </span>
+                    <span class="quality-label-text">
+                      {qStatus.replace('QUALITY_', '')}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <div class="image-status-cell">
+                    {recipe.hero_image_key ? (
+                      <div class="thumb-wrapper">
+                        <img src={`/api/image/${recipe.hero_image_key}`} alt="" class="row-thumb" />
+                        <span class="badge-mini badge-ready">READY</span>
+                      </div>
+                    ) : (
+                      <span class={`badge-mini badge-${(recipe.image_status || 'pending').toLowerCase()}`}>
+                        {recipe.image_status || 'PENDING'}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td class="date-cell">
+                  {new Date(recipe.updated_at || recipe.created_at).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </td>
+                <td class="actions-cell text-right">
+                  <a href={`/admin/recipes/${recipe.id}/review/`} class="btn-review">
+                    Editorial Review →
+                  </a>
+                  <a href={`/admin/recipes/${recipe.id}`} class="action-link">Edit</a>
+                  {recipe.status === 'PUBLISHED' && (
+                    <a href={`/${recipe.slug}/`} target="_blank" class="action-link text-success">Live ↗</a>
+                  )}
+                  <button 
+                    type="button" 
+                    class="btn-delete" 
+                    data-id={recipe.id}
+                    data-title={recipe.title}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            );
+          })
+        )}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  {totalPages > 1 && (
+    <div class="pagination-wrapper">
+      <span class="pagination-info">
+        Showing <strong>{offset + 1}</strong> – <strong>{Math.min(offset + pageSize, totalCount)}</strong> of <strong>{totalCount}</strong> recipes
+      </span>
+      <div class="pagination-buttons">
+        {page > 1 ? (
+          <a href={buildUrl({ page: page - 1 })} class="btn-page">← Previous</a>
+        ) : (
+          <span class="btn-page disabled">← Previous</span>
+        )}
+
+        <div class="page-numbers">
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+            <a 
+              href={buildUrl({ page: p })} 
+              class={`page-number ${p === page ? 'active' : ''}`}
+            >
+              {p}
+            </a>
+          ))}
+        </div>
+
+        {page < totalPages ? (
+          <a href={buildUrl({ page: page + 1 })} class="btn-page">Next →</a>
+        ) : (
+          <span class="btn-page disabled">Next →</span>
+        )}
+      </div>
+    </div>
+  )}
+</AdminLayout>
+
+<style>
+  .header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+  .header-actions h2 { margin: 0 0 0.25rem 0; font-size: 1.4rem; color: #18181b; }
+  .subtitle { margin: 0; font-size: 0.85rem; color: #71717a; }
+  .header-btns { display: flex; gap: 0.75rem; }
+  
+  .btn-primary {
+    background-color: #18181b;
+    color: white;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  .btn-primary:hover { background-color: #27272a; }
+
+  .btn-secondary {
+    background-color: #f4f4f5;
+    color: #18181b;
+    border: 1px solid #d4d4d8;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  .btn-secondary:hover { background-color: #e4e4e7; }
+
+  .controls-card {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .search-form { display: flex; width: 100%; }
+  .search-input-group { display: flex; width: 100%; gap: 0.5rem; }
+  .search-input {
+    flex: 1;
+    padding: 0.55rem 0.85rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    font-size: 0.875rem;
+  }
+  .btn-search {
+    background: #f4f4f5;
+    border: 1px solid #d4d4d8;
+    padding: 0.55rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .btn-search:hover { background: #e4e4e7; }
+  .btn-clear {
+    display: flex;
+    align-items: center;
+    color: #71717a;
+    font-size: 0.85rem;
+    text-decoration: none;
+    padding: 0 0.5rem;
+  }
+
+  .filters-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #f4f4f5;
+  }
+
+  .filter-tabs {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+  .filter-tab {
+    text-decoration: none;
+    color: #71717a;
+    font-weight: 500;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  .filter-tab:hover { background: #f4f4f5; color: #18181b; }
+  .filter-tab.active {
+    color: #18181b;
+    background: #e4e4e7;
+    font-weight: 600;
+  }
+
+  .quality-select-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .filter-label { font-size: 0.8rem; color: #71717a; font-weight: 600; }
+  .select-filter {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+  }
+
+  .table-container {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+  .admin-table th, .admin-table td {
+    padding: 0.9rem 1.15rem;
+    border-bottom: 1px solid #f4f4f5;
+    vertical-align: middle;
+  }
+  .admin-table th {
+    background-color: #fafafa;
+    font-weight: 600;
+    color: #52525b;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .admin-table tr:last-child td { border-bottom: none; }
+
+  .title-cell { display: flex; flex-direction: column; gap: 0.15rem; }
+  .slug-text { font-size: 0.75rem; color: #71717a; font-family: monospace; }
+  .source-link { font-size: 0.7rem; color: #2563eb; text-decoration: none; }
+  .source-link:hover { text-decoration: underline; }
+
+  .status-badge {
+    padding: 0.25rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-block;
+  }
+  .status-imported { background: #e0f2fe; color: #0369a1; }
+  .status-processing { background: #fef3c7; color: #b45309; }
+  .status-draft { background: #fef9c3; color: #854d0e; }
+  .status-published { background: #dcfce7; color: #15803d; }
+  .status-failed { background: #fee2e2; color: #dc2626; }
+
+  .quality-badge-group { display: flex; align-items: center; gap: 0.4rem; }
+  .quality-pill {
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    font-family: monospace;
+  }
+  .quality-pass { background: #dcfce7; color: #15803d; }
+  .quality-review { background: #fef3c7; color: #b45309; }
+  .quality-fail { background: #fee2e2; color: #dc2626; }
+  .quality-label-text { font-size: 0.7rem; color: #71717a; text-transform: uppercase; font-weight: 600; }
+
+  .image-status-cell { display: flex; align-items: center; }
+  .thumb-wrapper { display: flex; align-items: center; gap: 0.4rem; }
+  .row-thumb { width: 36px; height: 24px; object-fit: cover; border-radius: 4px; border: 1px solid #e4e4e7; }
+  .badge-mini {
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .badge-ready { background: #dcfce7; color: #15803d; }
+  .badge-pending { background: #f1f5f9; color: #475569; }
+  .badge-failed { background: #fee2e2; color: #dc2626; }
+
+  .date-cell { font-size: 0.8rem; color: #71717a; white-space: nowrap; }
+
+  .actions-cell {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .btn-review {
+    background: #18181b;
+    color: white;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-review:hover { background: #27272a; }
+  
+  .action-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .action-link:hover { text-decoration: underline; }
+  .text-success { color: #15803d !important; }
+  .text-right { text-align: right; }
+
+  .btn-delete {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+  }
+  .btn-delete:hover { text-decoration: underline; color: #b91c1c; }
+
+  .empty-state {
+    text-align: center;
+    padding: 3.5rem 1.5rem !important;
+  }
+  .empty-state-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+  .empty-icon { font-size: 2.5rem; margin-bottom: 0.25rem; }
+  .empty-state-inner h3 { margin: 0; font-size: 1.15rem; color: #18181b; }
+  .empty-state-inner p { margin: 0 0 1rem 0; font-size: 0.875rem; color: #71717a; line-height: 1.4; }
+  .empty-actions { display: flex; gap: 0.75rem; }
+
+  .pagination-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.25rem;
+    padding: 0.5rem 0;
+  }
+  .pagination-info { font-size: 0.85rem; color: #71717a; }
+  .pagination-buttons { display: flex; align-items: center; gap: 0.5rem; }
+  .btn-page {
+    padding: 0.4rem 0.75rem;
+    background: white;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    color: #18181b;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .btn-page:hover:not(.disabled) { background: #f4f4f5; }
+  .btn-page.disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  .page-numbers { display: flex; gap: 0.25rem; }
+  .page-number {
+    padding: 0.4rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #52525b;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .page-number:hover { background: #f4f4f5; }
+  .page-number.active { background: #18181b; color: white; font-weight: 600; }
+
+  .toast {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    background: #18181b;
+    color: white;
+    padding: 0.85rem 1.25rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 10000;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .hidden { display: none !important; }
+</style>
+
+<script>
+  const toast = document.getElementById('toast');
+  function showToast(msg: string, isError = false) {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.style.background = isError ? '#dc2626' : '#16a34a';
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3500);
+  }
+
+  // Handle Delete with Confirmation
+  document.querySelectorAll('.btn-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const target = e.currentTarget as HTMLButtonElement;
+      const recipeId = target.dataset.id;
+      const recipeTitle = target.dataset.title;
+
+      if (!recipeId) return;
+      if (!confirm(`Are you sure you want to permanently delete "${recipeTitle}"? This will delete all ingredients, instructions, and generated editorial content.`)) {
+        return;
+      }
+
+      target.disabled = true;
+      target.textContent = 'Deleting...';
+
+      try {
+        const res = await fetch('/api/recipes/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipeId })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`Recipe deleted successfully. ✅`);
+          const row = document.getElementById(`recipe-row-${recipeId}`);
+          if (row) {
+            row.style.opacity = '0.3';
+            setTimeout(() => row.remove(), 400);
+          }
+        } else {
+          showToast(data.error || 'Failed to delete recipe.', true);
+          target.disabled = false;
+          target.textContent = 'Delete';
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Error deleting recipe.', true);
+        target.disabled = false;
+        target.textContent = 'Delete';
+      }
+    });
+  });
+</script>

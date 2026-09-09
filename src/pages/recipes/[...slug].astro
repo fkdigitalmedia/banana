@@ -1,0 +1,9 @@
+---
+export const prerender = false;
+
+const { slug } = Astro.params;
+const cleanSlug = (slug || '').replace(/^\/+|\/+$/g, '');
+
+// Clean redirect from /recipes/slug/ to root-level /slug/
+return Astro.redirect(`/${cleanSlug}/`, 301);
+---

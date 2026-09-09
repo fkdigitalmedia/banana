@@ -1,0 +1,316 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Search from '../components/Search.astro';
+import RecipeCard from '../components/RecipeCard.astro';
+import { getPublishedRecipes, getFeaturedRecipe, getCategories } from '../lib/db/recipes';
+import { generateWebSiteSchema, generateOrganizationSchema } from '../lib/seo';
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+
+const latestRecipes = db ? await getPublishedRecipes(db, 6) : [];
+const featuredRecipe = db ? await getFeaturedRecipe(db) : null;
+const categories = db ? await getCategories(db) : [];
+
+const title = "BananaBread — Tested Homemade Recipes Worth Baking";
+const description = "Discover foolproof, delicious homemade recipes. From our signature moist banana bread to artisanal loaves and sweet treats.";
+
+const webSiteSchema = generateWebSiteSchema(siteUrl);
+const organizationSchema = generateOrganizationSchema(siteUrl);
+---
+
+<BaseLayout 
+  title={title} 
+  description={description}
+  canonical={`${siteUrl.replace(/\/+$/, '')}/`}
+  jsonLd={[webSiteSchema, organizationSchema]}
+>
+  <!-- Hero Section -->
+  <section class="home-hero">
+    <div class="container hero-container">
+      <span class="hero-badge">🍌 Fresh from the Oven</span>
+      <h1 class="hero-title">Homemade Recipes Worth Making</h1>
+      <p class="hero-subtitle">Tried, tested, and loved baking recipes crafted for the home kitchen.</p>
+      <div class="hero-search">
+        <Search />
+      </div>
+      <div class="hero-actions">
+        <a href="/recipes/" class="btn-hero-primary">Explore All Recipes →</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="container main-content">
+    {latestRecipes.length === 0 ? (
+      <div class="empty-state">
+        <span class="empty-icon">🥖</span>
+        <h2>Fresh Recipes Coming Soon</h2>
+        <p>Our kitchen is currently standardizing and testing new recipes. Check back soon for our latest baking guides and delicious homemade treats.</p>
+        <a href="/about/" class="btn-empty-learn">Learn About Our Kitchen →</a>
+      </div>
+    ) : (
+      <>
+        {featuredRecipe && (
+          <section class="featured-section">
+            <div class="section-heading">
+              <span class="section-tag">Featured Favorite</span>
+              <h2>Recipe of the Week</h2>
+            </div>
+            <div class="featured-card">
+              <RecipeCard recipe={featuredRecipe} r2BaseUrl={r2BaseUrl} />
+            </div>
+          </section>
+        )}
+        
+        <section class="latest-section">
+          <div class="section-heading">
+            <span class="section-tag">Tested & Approved</span>
+            <h2>Latest Recipes</h2>
+          </div>
+          <div class="recipe-grid">
+            {latestRecipes.map((recipe) => (
+              <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+            ))}
+          </div>
+          <div class="view-all-wrapper">
+            <a href="/recipes/" class="btn-view-all">Browse All Recipes ({latestRecipes.length}+) →</a>
+          </div>
+        </section>
+
+        {categories.length > 0 && (
+          <section class="categories-section">
+            <div class="section-heading">
+              <span class="section-tag">Explore by Topic</span>
+              <h2>Browse Categories</h2>
+            </div>
+            <div class="category-pills">
+              {categories.map((cat: any) => (
+                <a href={`/recipes/${cat.slug}/`} class="category-pill">
+                  {cat.name}
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+      </>
+    )}
+
+    <!-- Editorial Mission Banner -->
+    <section class="editorial-section">
+      <div class="editorial-content">
+        <h2>About BananaBread Kitchen</h2>
+        <p>BananaBread is a digital culinary publication dedicated to reliable home baking. Every recipe features exact measurements, clear instructions, and practical guidance so you can bake with confidence. From beginner-friendly quick breads to artisan pastries, we celebrate the joy of homemade baking.</p>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .home-hero {
+    background: linear-gradient(180deg, #FFF8F0 0%, #FFFDF7 100%);
+    padding: 4.5rem 1rem 3.5rem 1rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 3.5rem;
+  }
+  .hero-container {
+    max-width: 750px;
+    margin: 0 auto;
+  }
+  .hero-badge {
+    display: inline-block;
+    background: #FDE8D3;
+    color: var(--primary);
+    padding: 0.35rem 0.85rem;
+    border-radius: 9999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 1.25rem;
+  }
+  .hero-title {
+    font-family: 'Georgia', 'Palatino', serif;
+    font-size: 3.25rem;
+    color: var(--text-primary);
+    margin: 0 0 1rem 0;
+    line-height: 1.15;
+  }
+  .hero-subtitle {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    margin: 0 auto 2.25rem auto;
+    max-width: 550px;
+    line-height: 1.5;
+  }
+  .hero-search {
+    display: flex;
+    justify-content: center;
+    max-width: 480px;
+    margin: 0 auto 1.5rem auto;
+  }
+  .hero-actions {
+    display: flex;
+    justify-content: center;
+  }
+  .btn-hero-primary {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    padding: 0.75rem 1.75rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 1rem;
+    text-decoration: none;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 0 4px 12px rgba(139, 69, 19, 0.2);
+  }
+  .btn-hero-primary:hover {
+    background: var(--text-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(139, 69, 19, 0.3);
+  }
+
+  .view-all-wrapper {
+    display: flex;
+    justify-content: center;
+    margin-top: 2.5rem;
+  }
+  .btn-view-all {
+    display: inline-block;
+    padding: 0.75rem 1.75rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition: all 0.15s ease-in-out;
+  }
+  .btn-view-all:hover {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4.5rem;
+    padding-bottom: 4rem;
+  }
+
+  .section-heading {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  .section-tag {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+  .section-heading h2 {
+    font-family: 'Georgia', serif;
+    font-size: 2.25rem;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .featured-card {
+    max-width: 820px;
+    margin: 0 auto;
+  }
+
+  .recipe-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+  }
+
+  .category-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    justify-content: center;
+  }
+  .category-pill {
+    padding: 0.75rem 1.6rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-weight: 600;
+    color: var(--primary);
+    text-decoration: none;
+    transition: all 0.15s ease-in-out;
+  }
+  .category-pill:hover {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(139, 69, 19, 0.15);
+  }
+
+  .editorial-section {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    padding: 3.5rem 2rem;
+    border-radius: 16px;
+    text-align: center;
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  .editorial-content h2 {
+    font-family: 'Georgia', serif;
+    color: var(--primary);
+    font-size: 2rem;
+    margin: 0 0 1rem 0;
+  }
+  .editorial-content p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1.75;
+    margin: 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 5rem 2rem;
+    background-color: var(--surface);
+    border-radius: 12px;
+    border: 2px dashed var(--border);
+    max-width: 600px;
+    margin: 2rem auto;
+  }
+  .empty-icon { font-size: 3rem; display: block; margin-bottom: 1rem; }
+  .empty-state h2 { font-family: 'Georgia', serif; color: var(--primary); margin: 0 0 0.75rem 0; }
+  .empty-state p { color: var(--text-secondary); margin: 0 0 1.5rem 0; }
+  .btn-empty-learn {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 9999px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.2s ease-in-out;
+  }
+  .btn-empty-learn:hover {
+    background: var(--text-primary);
+    transform: translateY(-2px);
+  }
+
+  @media (max-width: 768px) {
+    .home-hero { padding: 3rem 1rem 2.5rem 1rem; }
+    .hero-title { font-size: 2.25rem; }
+    .main-content { gap: 3rem; }
+  }
+</style>

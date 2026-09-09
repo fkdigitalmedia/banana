@@ -1,0 +1,92 @@
+---
+interface FAQ {
+  question: string;
+  answer: string;
+}
+
+interface Props {
+  faq: FAQ[];
+}
+
+const { faq } = Astro.props;
+
+if (!faq || faq.length === 0) {
+  return null;
+}
+---
+
+<section class="recipe-faq">
+  <h2>Frequently Asked Questions</h2>
+  <div class="faq-list">
+    {faq.map((item) => (
+      <details class="faq-item">
+        <summary class="faq-question">{item.question}</summary>
+        <div class="faq-answer">
+          <p>{item.answer}</p>
+        </div>
+      </details>
+    ))}
+  </div>
+</section>
+
+<style>
+  .recipe-faq {
+    margin: 3rem 0;
+  }
+  
+  .recipe-faq h2 {
+    margin-bottom: 1.5rem;
+  }
+  
+  .faq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .faq-item {
+    background-color: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .faq-question {
+    padding: 1rem 1.5rem;
+    font-weight: bold;
+    cursor: pointer;
+    background-color: var(--surface);
+    margin: 0;
+    list-style: none;
+    position: relative;
+    font-family: var(--font-heading);
+    font-size: 1.125rem;
+  }
+  
+  .faq-question::-webkit-details-marker {
+    display: none;
+  }
+  
+  .faq-question::after {
+    content: '+';
+    position: absolute;
+    right: 1.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.5rem;
+    color: var(--primary);
+  }
+  
+  details[open] .faq-question::after {
+    content: '−';
+  }
+  
+  .faq-answer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  .faq-answer p {
+    margin: 0;
+  }
+</style>

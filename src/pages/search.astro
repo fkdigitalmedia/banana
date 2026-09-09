@@ -1,0 +1,123 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import RecipeCard from '../components/RecipeCard.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import Search from '../components/Search.astro';
+import { searchPublishedRecipes } from '../lib/db/recipes';
+
+const q = Astro.url.searchParams.get('q')?.trim() || '';
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+
+const recipes = (q && db) ? await searchPublishedRecipes(db, q, 24) : [];
+
+const title = q ? `"${q}" Recipe Search Results — BananaBread` : 'Search Tested Recipes — BananaBread';
+const description = q ? `Find the best recipes matching "${q}" on BananaBread.` : 'Search our collection of tested baking and cooking recipes.';
+---
+
+<BaseLayout 
+  title={title} 
+  description={description} 
+  noindex={true}
+  canonical={`${siteUrl.replace(/\/+$/, '')}/search/`}
+>
+  <div class="container page-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'Search' }
+    ]} />
+
+    <header class="search-header">
+      <h1>Search Recipes</h1>
+      <div class="search-bar-container">
+        <Search />
+      </div>
+      {q && (
+        <p class="search-results-text">
+          Found <strong>{recipes.length}</strong> {recipes.length === 1 ? 'recipe' : 'recipes'} matching <em>"{q}"</em>
+        </p>
+      )}
+    </header>
+
+    {q && recipes.length === 0 ? (
+      <div class="empty-state">
+        <span class="empty-icon">🔍</span>
+        <h3>No matching recipes found</h3>
+        <p>We couldn't find any published recipes matching <strong>"{q}"</strong>. Try searching for "banana bread", "chocolate", or "muffins".</p>
+        <a href="/" class="btn-home">← Browse All Recipes</a>
+      </div>
+    ) : (
+      <div class="recipe-grid">
+        {recipes.map((recipe) => (
+          <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+        ))}
+      </div>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  .page-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem 1rem;
+    min-height: 65vh;
+  }
+  
+  .search-header {
+    text-align: center;
+    margin-bottom: 3.5rem;
+  }
+  
+  .search-header h1 {
+    font-family: 'Georgia', serif;
+    font-size: 2.75rem;
+    color: var(--text-primary);
+    margin: 0 0 1.5rem 0;
+  }
+  
+  .search-bar-container {
+    display: flex;
+    justify-content: center;
+    max-width: 520px;
+    margin: 0 auto 1.5rem auto;
+  }
+  
+  .search-results-text {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+  
+  .recipe-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4.5rem 2rem;
+    background-color: var(--surface);
+    border-radius: 12px;
+    border: 1px dashed var(--border);
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .empty-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+  .empty-state h3 { font-family: 'Georgia', serif; color: var(--primary); margin: 0 0 0.5rem 0; }
+  .empty-state p { color: var(--text-secondary); margin: 0 0 1.5rem 0; line-height: 1.5; }
+  .btn-home {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    padding: 0.65rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+  }
+</style>

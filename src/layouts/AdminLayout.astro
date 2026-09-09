@@ -1,0 +1,111 @@
+---
+interface Props {
+  title: string;
+  activePage?: string;
+}
+
+const { title, activePage } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} - Admin</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, sans-serif;
+        background-color: #f4f4f5;
+        color: #18181b;
+      }
+      .admin-shell {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .admin-header {
+        background-color: #fff;
+        border-bottom: 1px solid #e4e4e7;
+        padding: 1rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .admin-header h1 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      .admin-body {
+        display: flex;
+        flex: 1;
+      }
+      .admin-sidebar {
+        width: 250px;
+        background-color: #fff;
+        border-right: 1px solid #e4e4e7;
+        padding: 1rem 0;
+      }
+      .admin-sidebar ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .admin-sidebar li a {
+        display: block;
+        padding: 0.75rem 1.5rem;
+        color: #3f3f46;
+        text-decoration: none;
+      }
+      .admin-sidebar li a:hover,
+      .admin-sidebar li a.active {
+        background-color: #f4f4f5;
+        color: #18181b;
+        font-weight: 500;
+      }
+      .admin-main {
+        flex: 1;
+        padding: 2rem;
+        overflow-y: auto;
+      }
+      .logout-btn {
+        background: none;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="admin-shell">
+      <header class="admin-header">
+        <h1>BananaBread Admin</h1>
+        <form method="POST" action="/api/auth/logout">
+          <button type="submit" class="logout-btn">Logout</button>
+        </form>
+      </header>
+      <div class="admin-body">
+        <aside class="admin-sidebar">
+          <nav>
+            <ul>
+              <li><a href="/admin/" class={activePage === 'dashboard' ? 'active' : ''}>Dashboard</a></li>
+              <li><a href="/admin/review/" class={activePage === 'review' ? 'active' : ''}>Review Queue</a></li>
+              <li><a href="/admin/import/" class={activePage === 'import' ? 'active' : ''}>Import Recipe</a></li>
+              <li><a href="/admin/recipes/" class={activePage === 'recipes' ? 'active' : ''}>Recipes</a></li>
+              <li><a href="/admin/author/" class={activePage === 'author' ? 'active' : ''}>Author Profile</a></li>
+              <li><a href="/admin/seo/internal-links/" class={activePage === 'seo' ? 'active' : ''}>Internal Links</a></li>
+              <li><a href="/admin/categories/" class={activePage === 'categories' ? 'active' : ''}>Categories</a></li>
+              <li><a href="/admin/settings/" class={activePage === 'settings' ? 'active' : ''}>Settings</a></li>
+            </ul>
+          </nav>
+        </aside>
+        <main class="admin-main">
+          <slot />
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

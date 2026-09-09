@@ -1,0 +1,2199 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getRecipeWithAllDetails, getCategories, getJobByRecipeId } from '../../../lib/db/recipes';
+import { validateTechnicalSeo, analyzeInternalLinks, getRedirectHistory } from '../../../lib/seo';
+
+const env = Astro.locals.runtime.env;
+const db = env.DB;
+const recipeId = parseInt(Astro.params.id || '0', 10);
+const siteUrl = env.SITE_URL || 'https://yoursite.com';
+
+const [recipe, categories, latestJob] = await Promise.all([
+  getRecipeWithAllDetails(db, recipeId),
+  getCategories(db),
+  getJobByRecipeId(db, recipeId)
+]);
+
+if (!recipe) {
+  return Astro.redirect('/admin/recipes/');
+}
+
+const [linkAnalysis, redirectsHistory, imageRecords] = await Promise.all([
+  analyzeInternalLinks(db, recipe.id, recipe.slug, recipe.category_id, recipe.cuisine),
+  getRedirectHistory(db, recipe.id),
+  db.prepare('SELECT * FROM recipe_images WHERE recipe_id = ? ORDER BY id DESC').bind(recipe.id).all<any>()
+]);
+
+const recipeImages = imageRecords?.results || [];
+const sourceImage = recipeImages.find((img: any) => img.type === 'SOURCE' && (img.placement === 'HERO' || !img.placement)) || recipeImages.find((img: any) => img.type === 'SOURCE');
+const generatedImage = recipeImages.find((img: any) => img.type === 'GENERATED');
+const seenAdminKeys = new Set<string>();
+const inArticleImages = recipeImages.filter((img: any) => {
+  if (img.type !== 'SOURCE' || img.status !== 'READY') return false;
+  if (img.placement === 'HERO' || img.r2_key === recipe.hero_image_key || img.r2_key === sourceImage?.r2_key) return false;
+  if (seenAdminKeys.has(img.r2_key)) return false;
+  seenAdminKeys.add(img.r2_key);
+  return true;
+});
+
+const content = recipe.content || {};
+const seo = recipe.seo || {};
+
+let qualityReport: any = null;
+if (recipe.quality_report) {
+  try {
+    qualityReport = typeof recipe.quality_report === 'string' ? JSON.parse(recipe.quality_report) : recipe.quality_report;
+  } catch {
+    qualityReport = null;
+  }
+}
+const qualityScore = recipe.quality_score ?? qualityReport?.score ?? 100;
+const qualityStatus = recipe.quality_status || (qualityScore >= 80 ? 'QUALITY_PASSED' : 'QUALITY_REVIEW');
+
+const seoReport = validateTechnicalSeo(
+  recipe,
+  recipe.ingredients || [],
+  recipe.instructions || [],
+  content,
+  seo,
+  siteUrl,
+  { incomingLinksCount: linkAnalysis?.incomingLinksCount }
+);
+
+// Format ingredients for editing / locked display
+const ingredientsList = (recipe.ingredients || [])
+  .map((i: any) => i.original_text || `${i.quantity || ''} ${i.unit || ''} ${i.name || ''} ${i.notes ? `(${i.notes})` : ''}`.trim())
+  .join('\n');
+
+const instructionsList = (recipe.instructions || [])
+  .map((i: any) => `${i.step_number}. ${i.instruction || i.text}`)
+  .join('\n');
+
+let parsedIngGuidance = '';
+if (content.ingredient_guidance) {
+  try {
+    const arr = typeof content.ingredient_guidance === 'string' ? JSON.parse(content.ingredient_guidance) : content.ingredient_guidance;
+    parsedIngGuidance = Array.isArray(arr) ? arr.map((item: any) => `### ${item.ingredient}\n${item.guidance}`).join('\n\n') : String(content.ingredient_guidance);
+  } catch { parsedIngGuidance = String(content.ingredient_guidance); }
+}
+
+let parsedCookingGuidance = '';
+if (content.cooking_guidance) {
+  try {
+    const arr = typeof content.cooking_guidance === 'string' ? JSON.parse(content.cooking_guidance) : content.cooking_guidance;
+    parsedCookingGuidance = Array.isArray(arr) ? arr.join('\n\n') : String(content.cooking_guidance);
+  } catch { parsedCookingGuidance = String(content.cooking_guidance); }
+}
+
+let parsedTips = '';
+if (content.tips) {
+  try {
+    const arr = typeof content.tips === 'string' ? JSON.parse(content.tips) : content.tips;
+    parsedTips = Array.isArray(arr) ? arr.join('\n') : String(content.tips);
+  } catch { parsedTips = String(content.tips); }
+}
+
+let parsedVariations = '';
+if (content.variations) {
+  try {
+    const arr = typeof content.variations === 'string' ? JSON.parse(content.variations) : content.variations;
+    parsedVariations = Array.isArray(arr) ? arr.map((v: any) => `### ${v.name}\n${v.description}`).join('\n\n') : String(content.variations);
+  } catch { parsedVariations = String(content.variations); }
+}
+
+let parsedFaq = '';
+if (content.faq) {
+  try {
+    const arr = typeof content.faq === 'string' ? JSON.parse(content.faq) : content.faq;
+    parsedFaq = Array.isArray(arr) ? arr.map((f: any) => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n') : String(content.faq);
+  } catch { parsedFaq = String(content.faq); }
+}
+---
+
+<AdminLayout title={`Edit: ${recipe.title}`} activePage="recipes">
+  <div class="editor-header">
+    <div class="breadcrumb">
+      <a href="/admin/recipes/">← Back to Recipes</a>
+      <span class="divider">/</span>
+      <span class={`status-pill status-${(recipe.status || 'imported').toLowerCase()}`}>{recipe.status}</span>
+    </div>
+    <div class="actions">
+      <button id="btn-validate" type="button" class="btn btn-secondary">🔍 Validate Facts</button>
+      <button id="btn-save-draft" type="button" class="btn btn-secondary">💾 Save Changes</button>
+      {recipe.status === 'PUBLISHED' ? (
+        <>
+          <a href={`/${recipe.slug}/`} target="_blank" class="btn btn-secondary">🌐 View Live</a>
+          <button id="btn-unpublish" type="button" class="btn btn-warning-outline">↩ Unpublish</button>
+        </>
+      ) : (
+        <>
+          <a href={`/${recipe.slug}/?preview=true`} target="_blank" class="btn btn-secondary">👁️ Preview Draft</a>
+          {recipe.status !== 'APPROVED' && (
+            <button id="btn-approve" type="button" class="btn btn-secondary" style="border-color: #16a34a; color: #16a34a; font-weight: 600;">✓ Approve</button>
+          )}
+          <button id="btn-publish" type="button" class="btn btn-success">🚀 Publish Recipe</button>
+        </>
+      )}
+      <button id="btn-delete-recipe" type="button" class="btn btn-danger-outline">🗑️</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Fact Change Warning Banner -->
+  <div id="fact-warning-banner" class="fact-warning-banner hidden">
+    ⚠️ <strong>Recipe Facts Modified:</strong> Structured ingredients, times, or instructions have changed. Re-run <strong>🔍 Validate Facts</strong> or regenerate sections to ensure editorial content stays factually accurate.
+  </div>
+
+  <!-- Generate Article Banner -->
+  <div class="generate-hero-card">
+    <div class="generate-info">
+      <div class="ai-badge">🤖 DeepSeek Editorial Engine</div>
+      <h2>{recipe.status === 'IMPORTED' ? 'Ready for Original Editorial Generation' : 'DeepSeek Content Generation'}</h2>
+      <p>Transform structured recipe facts into a complete, original, and SEO-optimized recipe article with independent culinary analysis.</p>
+    </div>
+    <div class="generate-action">
+      <button id="btn-start-generation" type="button" class="btn-generate-large">
+        ✨ {recipe.status === 'IMPORTED' ? 'Generate Full Article' : 'Regenerate Full Article'}
+      </button>
+    </div>
+  </div>
+
+  <!-- Generation Progress Modal -->
+  <div id="generation-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🤖 DeepSeek Editorial Generation</h3>
+        <span id="generation-status-text" class="status-running">In Progress...</span>
+      </div>
+      <p class="modal-desc">Generating high-value original editorial content from locked recipe facts. Please wait...</p>
+      
+      <ul id="generation-stages-list" class="generation-stages">
+        <li data-stage="1" class="stage-item"><span class="stage-icon">⏳</span> 1. Editorial & Positioning Analysis</li>
+        <li data-stage="2" class="stage-item"><span class="stage-icon">⏳</span> 2. Engaging Introduction & Hook</li>
+        <li data-stage="3" class="stage-item"><span class="stage-icon">⏳</span> 3. Ingredient Science & Guidance</li>
+        <li data-stage="4" class="stage-item"><span class="stage-icon">⏳</span> 4. Cooking Technique Guidance</li>
+        <li data-stage="5" class="stage-item"><span class="stage-icon">⏳</span> 5. Practical Pro Baking Tips</li>
+        <li data-stage="6" class="stage-item"><span class="stage-icon">⏳</span> 6. Optional Mix-ins & Variations</li>
+        <li data-stage="7" class="stage-item"><span class="stage-icon">⏳</span> 7. Serving Suggestions & Pairings</li>
+        <li data-stage="8" class="stage-item"><span class="stage-icon">⏳</span> 8. Storage & Reheating Instructions</li>
+        <li data-stage="9" class="stage-item"><span class="stage-icon">⏳</span> 9. Recipe-Specific Reader FAQ</li>
+        <li data-stage="10" class="stage-item"><span class="stage-icon">⏳</span> 10. SEO Title, Description & Keywords</li>
+        <li data-stage="11" class="stage-item"><span class="stage-icon">⏳</span> 11. Full Article Assembly</li>
+        <li data-stage="12" class="stage-item"><span class="stage-icon">⏳</span> 12. Factual Integrity Validation</li>
+        <li data-stage="13" class="stage-item"><span class="stage-icon">⏳</span> 13. Ready as Draft</li>
+      </ul>
+
+      <div id="modal-error-msg" class="modal-error hidden"></div>
+
+      <div class="modal-footer">
+        <button id="btn-close-modal" type="button" class="btn btn-secondary hidden">Close</button>
+        <button id="btn-retry-stage" type="button" class="btn btn-warning hidden">↻ Retry Failed Stage</button>
+        <button id="btn-reload-page" type="button" class="btn btn-primary hidden">Review Draft →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Validation Issues Alert Box -->
+  <div id="validation-panel" class="validation-panel hidden">
+    <div class="validation-header">
+      <h4>🔍 Factual Validation Report</h4>
+      <button id="btn-close-val" type="button" class="close-btn">×</button>
+    </div>
+    <ul id="validation-list" class="validation-list"></ul>
+  </div>
+
+  <form id="recipe-editor-form" class="editor-grid">
+    
+    <!-- Left Column: AI Editorial Content -->
+    <div class="main-column">
+      
+      <div class="section-divider-title">
+        <span>✍️ AI GENERATED EDITORIAL CONTENT</span>
+      </div>
+
+      <!-- Basic Info -->
+      <div class="card">
+        <h3>Basic Information</h3>
+        <div class="form-group">
+          <label for="title">Recipe Title</label>
+          <input type="text" id="title" name="title" value={recipe.title} class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label for="slug">URL Slug</label>
+          <div class="slug-input-wrapper">
+            <span class="slug-prefix">/</span>
+            <input type="text" id="slug" name="slug" value={recipe.slug} class="form-control slug-input" required />
+            <span class="slug-suffix">/</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="description">Short Description / Excerpt</label>
+          <textarea id="description" name="description" class="form-control" rows="3">{recipe.description}</textarea>
+        </div>
+      </div>
+
+      <!-- Introduction & Why This Recipe -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Introduction & Why You'll Love It</h3>
+            <p class="card-subtitle">Original hook and editorial summary of recipe highlights.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="introduction">↺ Regenerate Intro</button>
+        </div>
+        <div class="form-group">
+          <label for="introduction">Introduction Text</label>
+          <textarea id="introduction" name="introduction" class="form-control" rows="6">{content.introduction || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="why_this_recipe">Why You'll Love This Recipe</label>
+          <textarea id="why_this_recipe" name="why_this_recipe" class="form-control" rows="4">{content.why_this_recipe || ''}</textarea>
+        </div>
+      </div>
+
+      <!-- Ingredient Guidance -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Ingredient Guidance</h3>
+            <p class="card-subtitle">Culinary advice on selection, temperature, and role of key ingredients.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="ingredientGuidance">↺ Regenerate Guidance</button>
+        </div>
+        <textarea id="ingredient_guidance" name="ingredient_guidance" class="form-control" rows="8">{parsedIngGuidance}</textarea>
+      </div>
+
+      <!-- Cooking Guidance -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Cooking & Technique Guidance</h3>
+            <p class="card-subtitle">Step-by-step technique explanations, sensory cues, and doneness tests.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="cookingGuidance">↺ Regenerate Cooking</button>
+        </div>
+        <textarea id="cooking_guidance" name="cooking_guidance" class="form-control" rows="8">{parsedCookingGuidance}</textarea>
+      </div>
+
+      <!-- Pro Baking Tips -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Pro Baking Tips</h3>
+            <p class="card-subtitle">Actionable tips to ensure consistent results every time.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="tips">↺ Regenerate Tips</button>
+        </div>
+        <textarea id="tips" name="tips" class="form-control" rows="8">{parsedTips}</textarea>
+      </div>
+
+      <!-- Optional Variations -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Flavor & Mix-In Variations</h3>
+            <p class="card-subtitle">Optional additions that keep the base recipe intact.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="variations">↺ Regenerate Variations</button>
+        </div>
+        <textarea id="variations" name="variations" class="form-control" rows="8">{parsedVariations}</textarea>
+      </div>
+
+      <!-- Serving & Storage -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Serving & Storage Instructions</h3>
+            <p class="card-subtitle">Pairing recommendations, room temperature, freezing, and reheating.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="storage">↺ Regenerate Storage</button>
+        </div>
+        <div class="form-group">
+          <label for="serving_suggestions">Serving Suggestions</label>
+          <textarea id="serving_suggestions" name="serving_suggestions" class="form-control" rows="4">{content.serving_suggestions || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="storage">Storage & Reheating</label>
+          <textarea id="storage" name="storage" class="form-control" rows="6">{content.storage || ''}</textarea>
+        </div>
+      </div>
+
+      <!-- FAQ -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Frequently Asked Questions</h3>
+            <p class="card-subtitle">Insightful answers to common questions asked by home bakers.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="faq">↺ Regenerate FAQ</button>
+        </div>
+        <textarea id="faq" name="faq" class="form-control" rows="10">{parsedFaq}</textarea>
+      </div>
+
+      <!-- Assembled Full Article -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Assembled Article (Markdown)</h3>
+            <p class="card-subtitle">Cohesive full-text article including all headings, editorial, and structure.</p>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="assembly">↺ Reassemble Article</button>
+        </div>
+        <textarea id="full_article" name="full_article" class="form-control font-mono" rows="14">{content.full_article || ''}</textarea>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Locked Facts, Source & SEO -->
+    <div class="side-column">
+
+      <div class="section-divider-title">
+        <span>🔒 LOCKED RECIPE FACTS</span>
+      </div>
+
+      <!-- Locked Facts Card -->
+      <div class="card locked-card">
+        <div class="locked-header">
+          <div class="locked-title-group">
+            <span class="locked-icon">🔒</span>
+            <h3>Locked Recipe Facts</h3>
+          </div>
+          <button type="button" id="btn-toggle-fact-edit" class="btn-edit-facts">✏️ Edit Facts</button>
+        </div>
+        <p class="locked-sub">Authoritative source data. AI editorial strictly adheres to these values.</p>
+        
+        <div class="locked-meta-grid">
+          <div><span class="label">Prep:</span> <strong>{recipe.prep_time || '—'}m</strong></div>
+          <div><span class="label">Cook:</span> <strong>{recipe.cook_time || '—'}m</strong></div>
+          <div><span class="label">Total:</span> <strong>{recipe.total_time || '—'}m</strong></div>
+          <div><span class="label">Yield:</span> <strong>{recipe.servings || '—'}</strong></div>
+        </div>
+
+        <div class="form-group mt-3">
+          <label for="ingredients">Ingredients List (one per line)</label>
+          <textarea id="ingredients" name="ingredients" class="form-control facts-textarea" rows="8" readonly>{ingredientsList}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="instructions">Instructions (step-by-step)</label>
+          <textarea id="instructions" name="instructions" class="form-control facts-textarea" rows="8" readonly>{instructionsList}</textarea>
+        </div>
+      </div>
+
+      <!-- Recipe Images & Hero Management Card -->
+      <div class="card recipe-images-card">
+        <div class="card-header">
+          <div>
+            <h3>Recipe Images & Hero</h3>
+            <span class="card-subtitle">Manage source photo, AI visuals & hero presentation</span>
+          </div>
+          <span class={`status-pill ${recipe.hero_image_key ? 'status-published' : 'status-draft'}`}>
+            {recipe.hero_image_key ? `ACTIVE: ${recipe.hero_image_type || 'SOURCE'}` : 'NO ACTIVE HERO'}
+          </span>
+        </div>
+
+        <!-- Active Hero Preview -->
+        <div class="hero-preview-box">
+          <span class="preview-tag">Currently Active Hero (Public Page)</span>
+          {recipe.hero_image_key ? (
+            <div class="hero-preview-content">
+              <img src={`/api/image/${recipe.hero_image_key}`} alt={recipe.title} class="hero-img-display" />
+              <div class="hero-details">
+                <div class="hero-detail-item"><strong>Type:</strong> <span class="badge-tag">{recipe.hero_image_type || 'SOURCE'}</span></div>
+                <div class="hero-detail-item"><strong>R2 Key:</strong> <code class="code-truncate">{recipe.hero_image_key}</code></div>
+                <div class="hero-detail-item">
+                  <strong>Rights Status:</strong>
+                  <span class={`rights-badge rights-${(recipe.image_rights_status || 'review_required').toLowerCase()}`}>
+                    {recipe.image_rights_status || 'REVIEW_REQUIRED'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div class="hero-placeholder-box">
+              <span style="font-size: 2rem;">🖼️</span>
+              <p>No active hero image. Public page uses fallback placeholder.</p>
+            </div>
+          )}
+        </div>
+
+        <!-- Available Images Grid -->
+        <div class="image-options-grid">
+          <!-- 1. Source Image Option -->
+          <div class={`img-option-card ${recipe.hero_image_type === 'SOURCE' && recipe.hero_image_key ? 'active-option' : ''}`}>
+            <div class="option-header">
+              <span class="option-title">📸 Source Photo</span>
+              <span class={`status-pill status-${(recipe.source_image_status || 'pending').toLowerCase()}`}>
+                {recipe.source_image_status || 'PENDING'}
+              </span>
+            </div>
+
+            {sourceImage?.r2_key ? (
+              <div class="option-body">
+                <img src={`/api/image/${sourceImage.r2_key}`} alt="Source recipe photo" class="thumb-img" />
+                <div class="option-meta">
+                  <span>{sourceImage.width}×{sourceImage.height} ({sourceImage.mime_type?.replace('image/', '')})</span>
+                  <span>{Math.round((sourceImage.file_size || 0) / 1024)} KB</span>
+                  <div class="rights-selector-group">
+                    <label for="source-rights-select" class="text-xs">Rights:</label>
+                    <select id="source-rights-select" class="form-control select-rights-status" data-recipe-id={recipe.id}>
+                      <option value="REVIEW_REQUIRED" selected={recipe.image_rights_status === 'REVIEW_REQUIRED'}>Review Required</option>
+                      <option value="APPROVED" selected={recipe.image_rights_status === 'APPROVED'}>Approved</option>
+                      <option value="UNKNOWN" selected={recipe.image_rights_status === 'UNKNOWN'}>Unknown</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="option-actions">
+                  {recipe.hero_image_key !== sourceImage.r2_key ? (
+                    <button type="button" class="btn btn-primary btn-sm btn-use-image" data-type="SOURCE" data-id={recipe.id}>
+                      ✓ Use as Hero
+                    </button>
+                  ) : (
+                    <span class="active-label">✓ Active Hero</span>
+                  )}
+                  <button type="button" class="btn btn-secondary btn-sm btn-reimport-source" data-id={recipe.id}>
+                    ↻ Re-import
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div class="option-empty">
+                <p class="text-sm text-muted">
+                  {recipe.original_image_url ? 'Original source image URL detected.' : 'No source image found in recipe.'}
+                </p>
+                {recipe.original_image_url && (
+                  <button type="button" class="btn btn-secondary btn-sm btn-reimport-source" data-id={recipe.id}>
+                    📥 Import to R2
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <!-- 2. AI Generated Image Option -->
+          <div class={`img-option-card ${recipe.hero_image_type === 'GENERATED' && recipe.hero_image_key ? 'active-option' : ''}`}>
+            <div class="option-header">
+              <span class="option-title">🎨 AI Generated Photo</span>
+              <span class={`status-pill status-${(generatedImage ? 'published' : (recipe.image_status || 'pending')).toLowerCase()}`}>
+                {generatedImage ? 'READY' : (recipe.image_status || 'PENDING')}
+              </span>
+            </div>
+
+            {generatedImage?.r2_key ? (
+              <div class="option-body">
+                <img src={`/api/image/${generatedImage.r2_key}`} alt="AI Generated Hero" class="thumb-img" />
+                <div class="option-meta">
+                  <span>FLUX.1 Schnell ({generatedImage.width}×{generatedImage.height})</span>
+                  <span>Rights: <strong class="text-success">APPROVED</strong></span>
+                </div>
+                <div class="option-actions">
+                  {recipe.hero_image_key !== generatedImage.r2_key ? (
+                    <button type="button" class="btn btn-primary btn-sm btn-use-image" data-type="GENERATED" data-id={recipe.id}>
+                      ✓ Use as Hero
+                    </button>
+                  ) : (
+                    <span class="active-label">✓ Active Hero</span>
+                  )}
+                  <button type="button" class="btn btn-secondary btn-sm btn-generate-ai-img" data-id={recipe.id}>
+                    ✨ Regenerate AI
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div class="option-empty">
+                <p class="text-sm text-muted">No AI photo generated yet.</p>
+                <button type="button" class="btn btn-primary btn-sm btn-generate-ai-img" data-id={recipe.id}>
+                  ✨ Generate with FLUX.1
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {inArticleImages.length > 0 && (
+          <div class="in-article-images-manager" style="margin-top: 1.5rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <div>
+                <h4 style="margin: 0; font-size: 1rem; color: #1e293b;">🖼️ In-Article Process Photos ({inArticleImages.length})</h4>
+                <p style="margin: 0.25rem 0 0; font-size: 0.825rem; color: #64748b;">
+                  These step-by-step photos were automatically extracted and stored in R2. They display in the article's Visual Guide section.
+                </p>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
+              {inArticleImages.map((pImg: any, pIdx: number) => (
+                <div style="border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #f8fafc;">
+                  <div style="position: relative; aspect-ratio: 4/3; background: #eee;">
+                    <img src={`/api/image/${pImg.r2_key}`} alt={pImg.alt_text || 'Process photo'} style="width: 100%; height: 100%; object-fit: cover;" />
+                    <span style="position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600;">
+                      {pImg.step_number ? `Step ${pImg.step_number}` : `Photo #${pIdx + 1}`}
+                    </span>
+                  </div>
+                  <div style="padding: 0.6rem; font-size: 0.75rem;">
+                    <div style="color: #64748b; margin-bottom: 4px;">{pImg.width}×{pImg.height} • {Math.round((pImg.file_size || 0) / 1024)} KB</div>
+                    <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #334155;" title={pImg.alt_text}>{pImg.alt_text || 'Process photo'}</div>
+                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+                      {recipe.hero_image_key !== pImg.r2_key ? (
+                        <button type="button" class="btn btn-secondary btn-sm btn-use-image" data-type="SOURCE" data-key={pImg.r2_key} data-id={recipe.id} style="font-size: 0.7rem; padding: 2px 6px;">
+                          Set as Hero
+                        </button>
+                      ) : (
+                        <span style="color: #16a34a; font-weight: bold; font-size: 0.7rem;">✓ Active Hero</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <!-- Source Information Card -->
+      <div class="card">
+        <h3>Source & Extraction Data</h3>
+        <div class="source-details">
+          <div class="detail-row">
+            <span class="detail-label">Source URL:</span>
+            {recipe.source_url ? (
+              <a href={recipe.source_url} target="_blank" rel="noopener" class="detail-val link-truncate">
+                {recipe.source_domain || recipe.source_url} ↗
+              </a>
+            ) : (
+              <span class="detail-val">Direct Entry</span>
+            )}
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Extraction:</span>
+            <span class="badge-tag">{recipe.extraction_method || 'JSON-LD'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Confidence:</span>
+            <span class="badge-tag text-success">{recipe.extraction_confidence || 'HIGH'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Imported:</span>
+            <span class="detail-val">{new Date(recipe.created_at).toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categorization & Timings -->
+      <div class="card">
+        <h3>Categorization & Timings</h3>
+        <div class="form-group">
+          <label for="category_id">Category</label>
+          <select id="category_id" name="category_id" class="form-control">
+            <option value="">Select Category</option>
+            {categories.map((c: any) => (
+              <option value={c.id} selected={c.id === recipe.category_id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="cuisine">Cuisine</label>
+            <input type="text" id="cuisine" name="cuisine" value={recipe.cuisine || ''} class="form-control" />
+          </div>
+          <div class="form-group">
+            <label for="servings">Servings / Yield</label>
+            <input type="text" id="servings" name="servings" value={recipe.servings || ''} class="form-control fact-input" />
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="prep_time">Prep (m)</label>
+            <input type="number" id="prep_time" name="prep_time" value={recipe.prep_time || ''} class="form-control fact-input" />
+          </div>
+          <div class="form-group">
+            <label for="cook_time">Cook (m)</label>
+            <input type="number" id="cook_time" name="cook_time" value={recipe.cook_time || ''} class="form-control fact-input" />
+          </div>
+          <div class="form-group">
+            <label for="total_time">Total (m)</label>
+            <input type="number" id="total_time" name="total_time" value={recipe.total_time || ''} class="form-control fact-input" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Content Quality & Fact-Consistency Card -->
+      <div class="card quality-panel-card">
+        <div class="card-header">
+          <h3>Content Quality</h3>
+          <span class={`status-badge-mini status-${qualityStatus.toLowerCase().replace('quality_', '')}`}>
+            {qualityScore}/100 — {qualityStatus.replace('QUALITY_', '')}
+          </span>
+        </div>
+
+        <div class="quality-checks-list">
+          <div class="quality-check-item">
+            <span class="q-icon">✓</span>
+            <span>Fact & Ingredient Consistency</span>
+          </div>
+          <div class="quality-check-item">
+            <span class="q-icon">✓</span>
+            <span>Temperature & Cook Times</span>
+          </div>
+          <div class="quality-check-item">
+            <span class="q-icon">✓</span>
+            <span>Recipe Specificity (Sensory Cues)</span>
+          </div>
+          <div class="quality-check-item">
+            <span class="q-icon">✓</span>
+            <span>Zero Cross-Section Duplication</span>
+          </div>
+          <div class="quality-check-item">
+            <span class="q-icon">✓</span>
+            <span>Natural SEO & Zero Cliches</span>
+          </div>
+        </div>
+
+        {qualityReport?.issues && qualityReport.issues.length > 0 && (
+          <div class="quality-issues-container">
+            <div class="issues-header-row">
+              <h4 class="issues-title">Detected Quality Flags ({qualityReport.issues.length})</h4>
+              <button type="button" id="btn-solve-issues-header" class="btn-solve-mini">
+                ✨ Solve Issues
+              </button>
+            </div>
+            <ul class="issues-list">
+              {qualityReport.issues.map((issue: any, idx: number) => (
+                <li class={`issue-item severity-${(issue.severity || 'low').toLowerCase()}`}>
+                  <span class="issue-badge">{issue.severity}</span>
+                  <div class="issue-body">
+                    <p class="issue-msg">{issue.message}</p>
+                    {issue.expected && (
+                      <div class="issue-diff">
+                        <span>Expected: <code>{issue.expected}</code></span>
+                        {issue.found && <span>Found: <code>{issue.found}</code></span>}
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    type="button" 
+                    class="btn-solve-single-issue" 
+                    data-issue-index={idx}
+                    data-issue-type={issue.type}
+                    title="Auto-solve this issue"
+                  >
+                    Solve ⚡
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div class="quality-actions">
+          {qualityReport?.issues && qualityReport.issues.length > 0 && (
+            <button type="button" id="btn-auto-fix-issues" class="btn-auto-fix-action">
+              ✨ Auto-Fix & Solve Issues
+            </button>
+          )}
+          <button type="button" id="btn-run-quality-check" class="btn-quality-action">
+            🔍 Re-run Quality Assessment
+          </button>
+        </div>
+      </div>
+
+      <!-- Pipeline Execution Card -->
+      <div class="card pipeline-panel-card">
+        <div class="card-header">
+          <h3>Pipeline Execution</h3>
+          <span class={`status-badge-mini status-${(latestJob?.status || (recipe.status === 'PUBLISHED' ? 'completed' : 'ready')).toLowerCase()}`}>
+            {latestJob?.status || (recipe.status === 'PUBLISHED' ? 'COMPLETED' : 'DRAFT_READY')}
+          </span>
+        </div>
+
+        <div class="pipeline-stages-compact">
+          <div class="p-stage-row passed">
+            <span class="p-check">✓</span>
+            <span>URL Extraction & Fact Locking</span>
+          </div>
+          <div class={`p-stage-row ${recipe.content ? 'passed' : 'pending'}`}>
+            <span class="p-check">{recipe.content ? '✓' : '○'}</span>
+            <span>DeepSeek AI Editorial Generation</span>
+          </div>
+          <div class={`p-stage-row ${qualityReport ? 'passed' : 'pending'}`}>
+            <span class="p-check">{qualityReport ? '✓' : '○'}</span>
+            <span>Content Quality & Consistency</span>
+          </div>
+          <div class={`p-stage-row ${recipe.hero_image_key ? 'passed' : 'pending'}`}>
+            <span class="p-check">{recipe.hero_image_key ? '✓' : '○'}</span>
+            <span>FLUX.1 Schnell Hero Image</span>
+          </div>
+          <div class={`p-stage-row ${recipe.status === 'PUBLISHED' ? 'passed' : 'ready'}`}>
+            <span class="p-check">{recipe.status === 'PUBLISHED' ? '✓' : '●'}</span>
+            <span>{recipe.status === 'PUBLISHED' ? 'Published' : 'Draft Ready for Review'}</span>
+          </div>
+        </div>
+
+        {latestJob?.error_message && (
+          <div class="pipeline-error-box">
+            <strong>Failed at {latestJob.current_stage}:</strong>
+            <p>{latestJob.error_message}</p>
+            <a href={`/admin/import/?retryJobId=${latestJob.id}`} class="btn-retry-pipeline">↻ Retry Pipeline</a>
+          </div>
+        )}
+      </div>
+
+      <!-- SEO & Technical Search Readiness -->
+      <div class="card seo-panel-card">
+        <div class="card-header">
+          <div>
+            <h3>SEO & Search Readiness</h3>
+            <span class={`score-pill score-${seoReport.score >= 85 ? 'high' : (seoReport.score >= 70 ? 'med' : 'low')}`}>
+              SEO Readiness: {seoReport.score}/100
+            </span>
+          </div>
+          <button type="button" class="btn-regenerate" data-section="seo">↺ Regenerate SEO</button>
+        </div>
+
+        <div class="form-group">
+          <label for="seo_title">SEO Title</label>
+          <input type="text" id="seo_title" name="seo_title" value={seo.seo_title || recipe.title} class="form-control" />
+          <span class="char-count" id="title-char-count">0/60 chars</span>
+        </div>
+        <div class="form-group">
+          <label for="meta_description">Meta Description</label>
+          <textarea id="meta_description" name="meta_description" class="form-control" rows="3">{seo.meta_description || recipe.description || ''}</textarea>
+          <span class="char-count" id="desc-char-count">0/155 chars</span>
+        </div>
+
+        <!-- Google SERP Snippet Preview -->
+        <div class="serp-preview">
+          <span class="serp-label">Google Search Preview</span>
+          <div class="serp-url">{seoReport.canonicalUrl}</div>
+          <div class="serp-title" id="serp-title-preview">{seo.seo_title || recipe.title}</div>
+          <div class="serp-desc" id="serp-desc-preview">{seo.meta_description || recipe.description || 'Learn how to make this delicious recipe...'}</div>
+        </div>
+
+        <!-- Technical Health Checklist -->
+        <div class="seo-health-grid">
+          <div class="seo-health-item">
+            <span class="health-label">Indexability:</span>
+            <span class={`health-value ${seoReport.indexability === 'INDEXABLE' ? 'text-success' : 'text-warning'}`}>
+              {seoReport.indexability}
+            </span>
+          </div>
+          <div class="seo-health-item">
+            <span class="health-label">Search Console:</span>
+            <span class="health-value text-muted">Not connected</span>
+          </div>
+          <div class="seo-health-item">
+            <span class="health-label">Internal Links:</span>
+            <span class={`health-value ${linkAnalysis?.isOrphan ? 'text-danger' : 'text-success'}`}>
+              {linkAnalysis?.incomingLinksCount || 0} incoming ({linkAnalysis?.status || 'DISCOVERABLE'})
+            </span>
+          </div>
+          <div class="seo-health-item">
+            <span class="health-label">Canonical:</span>
+            <span class="health-value link-truncate">{seoReport.canonicalUrl}</span>
+          </div>
+        </div>
+
+        {seoReport.issues.length > 0 && (
+          <div class="seo-issues-box">
+            <h4 class="seo-issues-title">SEO Attention Items ({seoReport.issues.length})</h4>
+            <ul class="seo-issues-list">
+              {seoReport.issues.map((issue: any) => (
+                <li class={`seo-issue-row level-${issue.level.toLowerCase()}`}>
+                  <span class="issue-badge">{issue.level}</span>
+                  <div class="issue-text">
+                    <p class="issue-msg">{issue.message}</p>
+                    {issue.recommendation && <p class="issue-rec">💡 {issue.recommendation}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {redirectsHistory && redirectsHistory.length > 0 && (
+          <div class="redirects-history-box">
+            <h4>🔄 Slug Change Redirects (301)</h4>
+            <ul class="redirect-list">
+              {redirectsHistory.map((r: any) => (
+                <li class="redirect-item">
+                  <code>/{r.old_slug}/</code> ➔ <code>/{r.target_slug}/</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <!-- Media Panel with Runware FLUX.1 Schnell Integration -->
+      <div class="card image-panel-card">
+        <div class="card-header">
+          <h3>Recipe Hero Image</h3>
+          <span class={`status-badge-mini status-${(recipe.image_status || (recipe.hero_image_key ? 'ready' : 'pending')).toLowerCase()}`}>
+            {recipe.image_status || (recipe.hero_image_key ? 'READY' : 'PENDING')}
+          </span>
+        </div>
+
+        <div class="image-preview-wrapper" id="image-preview-box">
+          {recipe.hero_image_key ? (
+            <img src={`/api/image/${recipe.hero_image_key}`} alt={recipe.title} class="image-preview" id="hero-img-element" />
+          ) : recipe.original_image_url ? (
+            <img src={recipe.original_image_url} alt={recipe.title} class="image-preview" id="hero-img-element" />
+          ) : (
+            <div class="image-placeholder" id="hero-img-placeholder">
+              <span>🖼️ No Hero Image Available</span>
+            </div>
+          )}
+        </div>
+
+        <div class="image-meta-details">
+          <div class="meta-row">
+            <span class="meta-title">AI Provider:</span>
+            <span class="meta-value">{recipe.image_provider || 'Runware'}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-title">Model:</span>
+            <span class="meta-value">{recipe.image_model || 'FLUX.1 Schnell'}</span>
+          </div>
+          {recipe.image_generated_at && (
+            <div class="meta-row">
+              <span class="meta-title">Generated:</span>
+              <span class="meta-value">{new Date(recipe.image_generated_at).toLocaleDateString()}</span>
+            </div>
+          )}
+        </div>
+
+        {recipe.image_prompt && (
+          <details class="prompt-details">
+            <summary class="prompt-summary">Inspect FLUX.1 Prompt</summary>
+            <p class="prompt-text">{recipe.image_prompt}</p>
+          </details>
+        )}
+
+        <div class="image-actions">
+          <button 
+            type="button" 
+            id="btn-generate-image" 
+            class="btn-image-action"
+          >
+            {recipe.hero_image_key ? '↺ Regenerate Image' : '⚡ Generate Hero Image'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Generation History -->
+      {recipe.jobHistory && recipe.jobHistory.length > 0 && (
+        <div class="card">
+          <h3>Generation History</h3>
+          <ul class="history-list">
+            {recipe.jobHistory.map((j: any) => (
+              <li class="history-item">
+                <div class="history-main">
+                  <span class={`status-badge-mini status-${(j.status || 'pending').toLowerCase()}`}>{j.status}</span>
+                  <span class="history-stage">{j.current_stage || 'INIT'}</span>
+                </div>
+                <span class="history-date">{new Date(j.created_at).toLocaleTimeString()}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+    </div>
+  </form>
+</AdminLayout>
+
+<style>
+  .editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    background: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #e4e4e7;
+  }
+  .breadcrumb { display: flex; align-items: center; gap: 0.75rem; font-size: 0.95rem; }
+  .breadcrumb a { color: #71717a; text-decoration: none; font-weight: 500; }
+  .breadcrumb a:hover { color: #18181b; }
+  .divider { color: #d4d4d8; }
+  
+  .status-pill {
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .status-imported { background: #e0f2fe; color: #0369a1; }
+  .status-processing { background: #fef3c7; color: #b45309; }
+  .status-draft { background: #fef9c3; color: #854d0e; }
+  .status-published { background: #dcfce7; color: #15803d; }
+  .status-failed { background: #fee2e2; color: #b91c1c; }
+
+  .actions { display: flex; gap: 0.75rem; align-items: center; }
+  .btn {
+    padding: 0.55rem 1.15rem;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 0.875rem;
+    border: 1px solid transparent;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: #18181b; color: white; }
+  .btn-primary:hover { background: #27272a; }
+  .btn-secondary { background: white; border-color: #d4d4d8; color: #18181b; }
+  .btn-secondary:hover { background: #f4f4f5; }
+  .btn-success { background: #16a34a; color: white; }
+  .btn-success:hover { background: #15803d; }
+  .btn-warning-outline { background: white; border-color: #fca5a5; color: #dc2626; }
+  .btn-warning-outline:hover { background: #fee2e2; }
+  .btn-danger-outline { background: white; border-color: #e4e4e7; color: #dc2626; padding: 0.55rem 0.75rem; }
+  .btn-danger-outline:hover { background: #fee2e2; border-color: #fca5a5; }
+
+  .fact-warning-banner {
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    padding: 0.85rem 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .section-divider-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #71717a;
+    text-transform: uppercase;
+    margin: 0.5rem 0 1rem 0;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #e4e4e7;
+  }
+
+  .generate-hero-card {
+    background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+    color: white;
+    padding: 1.75rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+  .generate-info h2 { margin: 0.35rem 0 0.5rem 0; font-size: 1.35rem; color: white; }
+  .generate-info p { margin: 0; color: #a1a1aa; font-size: 0.9rem; max-width: 600px; line-height: 1.5; }
+  .ai-badge {
+    display: inline-block;
+    background: #3f3f46;
+    color: #e4e4e7;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .btn-generate-large {
+    background: #6366f1;
+    color: white;
+    border: none;
+    padding: 0.85rem 1.6rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-generate-large:hover { background: #4f46e5; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  .modal-card {
+    background: white;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 580px;
+    padding: 2rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .modal-header h3 { margin: 0; font-size: 1.25rem; color: #18181b; }
+  .modal-desc { color: #71717a; font-size: 0.875rem; margin-bottom: 1.5rem; }
+  
+  .generation-stages { list-style: none; padding: 0; margin: 0 0 1.5rem 0; }
+  .stage-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #71717a;
+  }
+  .stage-item.running {
+    background: #eef2ff;
+    color: #4338ca;
+    font-weight: 600;
+  }
+  .stage-item.completed { color: #15803d; }
+  .stage-item.failed { background: #fee2e2; color: #dc2626; font-weight: 600; }
+  .stage-icon { font-size: 0.9rem; }
+  
+  .modal-error {
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #dc2626;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 0.75rem; }
+
+  /* Validation Panel */
+  .validation-panel {
+    background: #fffbeb;
+    border: 1px solid #fef3c7;
+    border-left: 4px solid #d97706;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  .validation-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+  .validation-header h4 { margin: 0; color: #92400e; font-size: 1rem; }
+  .close-btn { background: none; border: none; font-size: 1.25rem; cursor: pointer; color: #92400e; }
+  .validation-list { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; color: #78350f; line-height: 1.5; }
+
+  /* Layout Grid */
+  .editor-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  @media (min-width: 1024px) {
+    .editor-grid { grid-template-columns: 1.6fr 1fr; }
+  }
+
+  .card {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.75rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+  .card h3 { margin: 0 0 1rem 0; font-size: 1.1rem; color: #18181b; }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+  .card-subtitle { margin: 0.25rem 0 0 0; font-size: 0.8rem; color: #71717a; }
+
+  /* Recipe Images Card Styles */
+  .recipe-images-card { border-color: #e0e7ff; }
+  .hero-preview-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.85rem;
+    margin-bottom: 1.25rem;
+  }
+  .preview-tag {
+    display: block;
+    font-size: 0.725rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.05em;
+  }
+  .hero-preview-content {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  .hero-img-display {
+    width: 130px;
+    height: 85px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    background: #e2e8f0;
+  }
+  .hero-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+  }
+  .code-truncate {
+    font-family: monospace;
+    font-size: 0.725rem;
+    background: #e2e8f0;
+    padding: 1px 4px;
+    border-radius: 3px;
+    word-break: break-all;
+  }
+  .rights-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .rights-approved { background: #dcfce7; color: #166534; }
+  .rights-review_required { background: #fef3c7; color: #92400e; }
+  .rights-unknown { background: #f1f5f9; color: #475569; }
+
+  .hero-placeholder-box {
+    text-align: center;
+    padding: 1.5rem;
+    color: #94a3b8;
+  }
+  .hero-placeholder-box p { margin: 0.5rem 0 0 0; font-size: 0.825rem; }
+
+  .image-options-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .img-option-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.85rem;
+    background: white;
+  }
+  .img-option-card.active-option {
+    border-color: #6366f1;
+    background: #faf5ff;
+    box-shadow: 0 0 0 1px #6366f1;
+  }
+  .option-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.65rem;
+  }
+  .option-title { font-size: 0.85rem; font-weight: 700; color: #1e293b; }
+  .option-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .thumb-img {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+  }
+  .option-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+  .rights-selector-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .select-rights-status {
+    padding: 2px 4px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+  }
+  .option-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.25rem;
+  }
+  .active-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #16a34a;
+  }
+  .option-empty {
+    padding: 0.75rem;
+    text-align: center;
+    background: #f8fafc;
+    border-radius: 6px;
+  }
+
+  .btn-regenerate {
+    background: #f4f4f5;
+    border: 1px solid #d4d4d8;
+    color: #3f3f46;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .btn-regenerate:hover { background: #e4e4e7; color: #18181b; }
+
+  .form-group { margin-bottom: 1.25rem; }
+  .form-group label {
+    display: block;
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: #3f3f46;
+    margin-bottom: 0.4rem;
+  }
+  .form-control {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    box-sizing: border-box;
+  }
+  .form-control:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  }
+  .font-mono { font-family: monospace; font-size: 0.85rem; }
+
+  .slug-input-wrapper {
+    display: flex;
+    align-items: center;
+    background: #f4f4f5;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .slug-prefix, .slug-suffix {
+    padding: 0 0.75rem;
+    color: #71717a;
+    font-size: 0.85rem;
+  }
+  .slug-input { border: none !important; background: white; border-radius: 0 !important; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  /* Locked Facts Card */
+  .locked-card {
+    background: #fcfbf9;
+    border: 2px solid #e8d5c4;
+  }
+  .locked-header { display: flex; justify-content: space-between; align-items: center; }
+  .locked-title-group { display: flex; align-items: center; gap: 0.5rem; }
+  .locked-header h3 { margin: 0; color: #8b4513; }
+  .locked-sub { font-size: 0.8rem; color: #71717a; margin: 0.25rem 0 1rem 0; }
+  .btn-edit-facts {
+    background: white;
+    border: 1px solid #d4d4d8;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.55rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-edit-facts:hover { background: #f4f4f5; }
+
+  .locked-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    background: #fff8f0;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+    border: 1px solid #e8d5c4;
+  }
+  .locked-meta-grid .label { color: #8b4513; font-weight: 600; }
+  .facts-textarea[readonly] { background: #fafafa; color: #52525b; }
+  .facts-textarea.editing { background: white; border-color: #f59e0b; }
+
+  /* Source Info */
+  .source-details { display: flex; flex-direction: column; gap: 0.65rem; font-size: 0.85rem; }
+  .detail-row { display: flex; justify-content: space-between; align-items: center; }
+  .detail-label { color: #71717a; font-weight: 500; }
+  .detail-val { color: #18181b; font-weight: 600; }
+  .link-truncate { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; color: #2563eb; }
+  .badge-tag {
+    background: #f4f4f5;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  /* History list */
+  .history-list { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
+  .history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-main { display: flex; align-items: center; gap: 0.5rem; }
+  .status-badge-mini {
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .history-date { color: #71717a; font-size: 0.75rem; }
+
+  /* SERP Snippet Preview */
+  .serp-preview {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+  .serp-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 0.5rem; display: block; }
+  .serp-url { font-size: 0.8rem; color: #475569; margin-bottom: 0.25rem; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .serp-title { font-size: 1.05rem; color: #1a0dab; font-weight: 500; margin-bottom: 0.25rem; line-height: 1.3; }
+  .serp-desc { font-size: 0.85rem; color: #4d5156; line-height: 1.4; }
+  .char-count { font-size: 0.75rem; color: #71717a; display: block; margin-top: 0.25rem; text-align: right; }
+
+  /* SEO Health Grid & Issues */
+  .seo-health-grid { display: flex; flex-direction: column; gap: 0.35rem; margin: 1rem 0; font-size: 0.8rem; background: #fafafa; padding: 0.75rem; border-radius: 6px; border: 1px solid #f4f4f5; }
+  .seo-health-item { display: flex; justify-content: space-between; align-items: center; }
+  .health-label { color: #71717a; font-weight: 500; }
+  .health-value { font-weight: 600; color: #18181b; }
+  .text-success { color: #16a34a !important; }
+  .text-warning { color: #d97706 !important; }
+  .text-danger { color: #dc2626 !important; }
+  .text-muted { color: #a1a1aa !important; }
+
+  .seo-issues-box { background: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; padding: 0.75rem; margin-top: 0.85rem; }
+  .seo-issues-title { margin: 0 0 0.5rem 0; font-size: 0.8rem; color: #92400e; text-transform: uppercase; }
+  .seo-issues-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+  .seo-issue-row { font-size: 0.75rem; display: flex; gap: 0.45rem; line-height: 1.4; }
+  .level-critical .issue-badge { background: #fee2e2; color: #dc2626; }
+  .level-warning .issue-badge { background: #fef3c7; color: #b45309; }
+  .issue-text { flex: 1; }
+  .issue-rec { margin: 0.15rem 0 0 0; color: #4b5563; font-style: italic; font-size: 0.7rem; }
+
+  .redirects-history-box { background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 6px; padding: 0.75rem; margin-top: 0.85rem; }
+  .redirects-history-box h4 { margin: 0 0 0.4rem 0; font-size: 0.8rem; color: #166534; }
+  .redirect-list { list-style: none; padding: 0; margin: 0; font-size: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
+  .redirect-item code { background: white; padding: 0.1rem 0.3rem; border-radius: 3px; border: 1px solid #bbf7d0; font-family: monospace; }
+
+  /* Quality Panel */
+  .quality-checks-list { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; font-size: 0.8rem; }
+  .quality-check-item { display: flex; align-items: center; gap: 0.45rem; color: #3f3f46; }
+  .q-icon { color: #16a34a; font-weight: bold; }
+  
+  .quality-issues-container {
+    background: #fff1f2;
+    border: 1px solid #fecdd3;
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .issues-title { margin: 0 0 0.5rem 0; font-size: 0.8rem; color: #9f1239; text-transform: uppercase; letter-spacing: 0.04em; }
+  .issues-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .issue-item { font-size: 0.75rem; line-height: 1.4; display: flex; gap: 0.5rem; }
+  .issue-badge { font-weight: 700; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.65rem; height: fit-content; text-transform: uppercase; }
+  .severity-high .issue-badge { background: #fee2e2; color: #dc2626; }
+  .severity-medium .issue-badge { background: #fef3c7; color: #b45309; }
+  .severity-low .issue-badge { background: #f1f5f9; color: #475569; }
+  .issue-body { flex: 1; }
+  .issue-msg { margin: 0 0 0.25rem 0; font-weight: 500; color: #881337; }
+  .issue-diff { font-family: monospace; font-size: 0.7rem; color: #475569; display: flex; flex-direction: column; gap: 0.1rem; }
+
+  .issues-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+  }
+  .btn-solve-mini {
+    background: #16a34a;
+    color: white;
+    border: none;
+    padding: 0.22rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .btn-solve-mini:hover { background: #15803d; }
+  .btn-solve-mini:disabled { background: #86efac; cursor: not-allowed; }
+
+  .btn-solve-single-issue {
+    background: white;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    height: fit-content;
+    align-self: center;
+    transition: all 0.15s ease;
+  }
+  .btn-solve-single-issue:hover { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+  .btn-solve-single-issue:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .btn-auto-fix-action {
+    width: 100%;
+    background: #16a34a;
+    color: white;
+    border: none;
+    padding: 0.65rem 1rem;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    box-shadow: 0 1px 3px rgba(22, 163, 74, 0.3);
+  }
+  .btn-auto-fix-action:hover { background: #15803d; transform: translateY(-1px); box-shadow: 0 3px 6px rgba(22, 163, 74, 0.4); }
+  .btn-auto-fix-action:disabled { background: #86efac; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .btn-quality-action {
+    width: 100%;
+    background: #0284c7;
+    color: white;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-quality-action:hover { background: #0369a1; }
+  .btn-quality-action:disabled { background: #7dd3fc; cursor: not-allowed; }
+
+  /* Pipeline Panel */
+  .pipeline-stages-compact { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
+  .p-stage-row { display: flex; align-items: center; gap: 0.5rem; color: #52525b; }
+  .p-stage-row.passed { color: #18181b; }
+  .p-stage-row.passed .p-check { color: #16a34a; font-weight: bold; }
+  .p-stage-row.ready .p-check { color: #0284c7; font-weight: bold; }
+  .p-stage-row.pending { color: #a1a1aa; }
+  .p-stage-row.pending .p-check { color: #cbd5e1; }
+  .pipeline-error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.75rem; margin-top: 0.75rem; font-size: 0.8rem; color: #991b1b; }
+  .pipeline-error-box p { margin: 0.25rem 0 0.5rem 0; line-height: 1.35; }
+  .btn-retry-pipeline { display: inline-block; background: #dc2626; color: white; padding: 0.35rem 0.75rem; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 0.75rem; }
+  .btn-retry-pipeline:hover { background: #b91c1c; }
+
+  .image-preview-wrapper { border-radius: 8px; overflow: hidden; border: 1px solid #e4e4e7; background: #f8fafc; margin-bottom: 1rem; }
+  .image-preview { width: 100%; height: 200px; object-fit: cover; display: block; }
+  .image-placeholder { background: #f8fafc; border: 2px dashed #cbd5e1; padding: 2.5rem 1rem; text-align: center; color: #64748b; border-radius: 6px; font-size: 0.875rem; font-weight: 500; }
+  
+  .image-meta-details { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.85rem; font-size: 0.8rem; }
+  .meta-row { display: flex; justify-content: space-between; border-bottom: 1px solid #f4f4f5; padding-bottom: 0.25rem; }
+  .meta-title { color: #71717a; font-weight: 500; }
+  .meta-value { font-weight: 600; color: #18181b; }
+
+  .prompt-details { margin-bottom: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.75rem; }
+  .prompt-summary { cursor: pointer; color: #4338ca; font-weight: 600; }
+  .prompt-text { margin: 0.5rem 0 0 0; color: #475569; line-height: 1.4; font-family: monospace; }
+
+  .btn-image-action {
+    width: 100%;
+    background: #4f46e5;
+    color: white;
+    border: none;
+    padding: 0.65rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-image-action:hover { background: #4338ca; }
+  .btn-image-action:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+  .toast {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    background: #18181b;
+    color: white;
+    padding: 0.85rem 1.25rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 10000;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .hidden { display: none !important; }
+</style>
+
+<script>
+  const recipeId = parseInt(window.location.pathname.split('/').filter(Boolean).pop() || '0', 10);
+  const toast = document.getElementById('toast');
+  const factWarning = document.getElementById('fact-warning-banner');
+
+  function showToast(msg: string, isError = false) {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.style.background = isError ? '#dc2626' : '#16a34a';
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 4000);
+  }
+
+  // Toggle Fact Editing
+  const btnToggleFact = document.getElementById('btn-toggle-fact-edit');
+  const factTextareas = document.querySelectorAll('.facts-textarea') as NodeListOf<HTMLTextAreaElement>;
+  const factInputs = document.querySelectorAll('.fact-input') as NodeListOf<HTMLInputElement>;
+  let isEditingFacts = false;
+
+  btnToggleFact?.addEventListener('click', () => {
+    if (!isEditingFacts) {
+      if (!confirm('Warning:\n\nChanging locked recipe facts may require regenerating dependent editorial content.\n\nDo you wish to continue?')) {
+        return;
+      }
+    }
+    isEditingFacts = !isEditingFacts;
+    factTextareas.forEach(t => {
+      t.readOnly = !isEditingFacts;
+      t.classList.toggle('editing', isEditingFacts);
+    });
+    if (isEditingFacts) {
+      btnToggleFact.textContent = '🔒 Lock Facts';
+      factWarning?.classList.remove('hidden');
+    } else {
+      btnToggleFact.textContent = '✏️ Edit Facts';
+    }
+  });
+
+  // Track Fact Inputs modification
+  factInputs.forEach(input => {
+    input.addEventListener('input', () => {
+      factWarning?.classList.remove('hidden');
+    });
+  });
+  factTextareas.forEach(t => {
+    t.addEventListener('input', () => {
+      factWarning?.classList.remove('hidden');
+    });
+  });
+
+  // SERP Live Preview Updates
+  const seoTitleInput = document.getElementById('seo_title') as HTMLInputElement;
+  const metaDescInput = document.getElementById('meta_description') as HTMLTextAreaElement;
+  const serpTitle = document.getElementById('serp-title-preview');
+  const serpDesc = document.getElementById('serp-desc-preview');
+  const titleCount = document.getElementById('title-char-count');
+  const descCount = document.getElementById('desc-char-count');
+
+  function updateSerp() {
+    if (seoTitleInput && serpTitle && titleCount) {
+      serpTitle.textContent = seoTitleInput.value || 'Recipe Title';
+      titleCount.textContent = `${seoTitleInput.value.length}/60 chars`;
+      titleCount.style.color = seoTitleInput.value.length > 60 ? '#dc2626' : '#71717a';
+    }
+    if (metaDescInput && serpDesc && descCount) {
+      serpDesc.textContent = metaDescInput.value || 'Description...';
+      descCount.textContent = `${metaDescInput.value.length}/155 chars`;
+      descCount.style.color = metaDescInput.value.length > 155 ? '#dc2626' : '#71717a';
+    }
+  }
+
+  seoTitleInput?.addEventListener('input', updateSerp);
+  metaDescInput?.addEventListener('input', updateSerp);
+  updateSerp();
+
+  // Save Draft / Changes
+  const btnSave = document.getElementById('btn-save-draft') as HTMLButtonElement;
+  btnSave?.addEventListener('click', async () => {
+    btnSave.disabled = true;
+    btnSave.textContent = 'Saving...';
+
+    const form = document.getElementById('recipe-editor-form') as HTMLFormElement;
+    const formData = new FormData(form);
+    const payload: Record<string, any> = { recipeId };
+    formData.forEach((value, key) => { payload[key] = value; });
+
+    try {
+      const res = await fetch('/api/recipes/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('Changes saved successfully! 💾');
+      } else {
+        showToast(data.error || 'Failed to save changes.', true);
+      }
+    } catch (e: any) {
+      showToast(e.message, true);
+    } finally {
+      btnSave.disabled = false;
+      btnSave.textContent = '💾 Save Changes';
+    }
+  });
+
+  // Validate Facts
+  const btnVal = document.getElementById('btn-validate') as HTMLButtonElement;
+  const valPanel = document.getElementById('validation-panel');
+  const valList = document.getElementById('validation-list');
+  const btnCloseVal = document.getElementById('btn-close-val');
+
+  btnVal?.addEventListener('click', async () => {
+    btnVal.disabled = true;
+    btnVal.textContent = 'Validating...';
+    try {
+      const res = await fetch('/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.result.passed) {
+          showToast('✅ All fact and content quality checks passed!');
+          valPanel?.classList.add('hidden');
+        } else {
+          valList!.innerHTML = '';
+          data.result.issues.forEach((issue: any) => {
+            const li = document.createElement('li');
+            li.textContent = `[${issue.level.toUpperCase()}] ${issue.message}`;
+            valList!.appendChild(li);
+          });
+          valPanel?.classList.remove('hidden');
+          showToast('Validation found issues needing attention.', true);
+        }
+      } else {
+        showToast(data.error || 'Validation failed.', true);
+      }
+    } catch (e: any) {
+      showToast(e.message, true);
+    } finally {
+      btnVal.disabled = false;
+      btnVal.textContent = '🔍 Validate Facts';
+    }
+  });
+
+  btnCloseVal?.addEventListener('click', () => valPanel?.classList.add('hidden'));
+
+  // Section Regenerate Buttons
+  document.querySelectorAll('.btn-regenerate').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const target = e.currentTarget as HTMLButtonElement;
+      const section = target.dataset.section;
+      if (!section) return;
+
+      if (!confirm(`Regenerate this section?\n\nThe section will be regenerated using the locked recipe facts.`)) {
+        return;
+      }
+
+      const originalText = target.textContent;
+      target.disabled = true;
+      target.textContent = '↻ Regenerating...';
+
+      try {
+        const res = await fetch('/api/generate/section', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipeId, section })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`Section "${section}" regenerated! Updating view...`);
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          showToast(data.error || 'Regeneration failed.', true);
+          target.disabled = false;
+          target.textContent = originalText;
+        }
+      } catch (e: any) {
+        showToast(e.message, true);
+        target.disabled = false;
+        target.textContent = originalText;
+      }
+    });
+  });
+
+  // Approve
+  const btnApprove = document.getElementById('btn-approve') as HTMLButtonElement | null;
+  btnApprove?.addEventListener('click', async () => {
+    btnApprove.disabled = true;
+    btnApprove.textContent = 'Approving...';
+    try {
+      const res = await fetch('/api/editorial/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('✓ Recipe APPROVED for publication!');
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        showToast(data.error || 'Approval failed.', true);
+        btnApprove.disabled = false;
+        btnApprove.textContent = '✓ Approve';
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error.', true);
+      btnApprove.disabled = false;
+      btnApprove.textContent = '✓ Approve';
+    }
+  });
+
+  // Publish
+  const btnPublish = document.getElementById('btn-publish') as HTMLButtonElement;
+  btnPublish?.addEventListener('click', async () => {
+    if (!confirm('Publish this recipe? It will become live and publicly indexable on the website.')) return;
+    btnPublish.disabled = true;
+    btnPublish.textContent = 'Publishing...';
+    try {
+      const res = await fetch('/api/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('Recipe published successfully! 🚀');
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(data.error || 'Publishing failed.', true);
+      }
+    } catch (e: any) {
+      showToast(e.message, true);
+    } finally {
+      btnPublish.disabled = false;
+      btnPublish.textContent = '🚀 Publish Recipe';
+    }
+  });
+
+  // Unpublish
+  const btnUnpublish = document.getElementById('btn-unpublish');
+  btnUnpublish?.addEventListener('click', async () => {
+    if (!confirm('Unpublish this recipe? The public page will no longer be accessible.')) return;
+    btnUnpublish.textContent = 'Unpublishing...';
+    try {
+      const res = await fetch('/api/unpublish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('Recipe unpublished and returned to Draft! ✅');
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(data.error || 'Failed to unpublish.', true);
+      }
+    } catch (e: any) {
+      showToast(e.message, true);
+    }
+  });
+
+  // Delete Recipe
+  const btnDelete = document.getElementById('btn-delete-recipe');
+  btnDelete?.addEventListener('click', async () => {
+    if (!confirm('Delete this recipe permanently? This will remove all ingredients, instructions, and generated editorial content.')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/recipes/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('Recipe deleted. Redirecting...');
+        setTimeout(() => window.location.href = '/admin/recipes/', 1000);
+      } else {
+        showToast(data.error || 'Failed to delete recipe.', true);
+      }
+    } catch (e: any) {
+      showToast(e.message, true);
+    }
+  });
+
+  // Full DeepSeek Generation Flow
+  const btnStartGen = document.getElementById('btn-start-generation') as HTMLButtonElement;
+  const genModal = document.getElementById('generation-modal');
+  const genStatusText = document.getElementById('generation-status-text');
+  const modalErrorMsg = document.getElementById('modal-error-msg');
+  const btnCloseModal = document.getElementById('btn-close-modal');
+  const btnReloadPage = document.getElementById('btn-reload-page');
+
+  btnStartGen?.addEventListener('click', async () => {
+    genModal?.classList.remove('hidden');
+    modalErrorMsg?.classList.add('hidden');
+    btnCloseModal?.classList.add('hidden');
+    btnReloadPage?.classList.add('hidden');
+
+    const stageItems = document.querySelectorAll('.stage-item');
+    stageItems.forEach(el => {
+      el.className = 'stage-item';
+      const icon = el.querySelector('.stage-icon');
+      if (icon) icon.textContent = '⏳';
+    });
+
+    let currentStep = 1;
+    const interval = setInterval(() => {
+      if (currentStep <= 12) {
+        const item = document.querySelector(`.stage-item[data-stage="${currentStep}"]`);
+        if (item) {
+          item.className = 'stage-item running';
+          const icon = item.querySelector('.stage-icon');
+          if (icon) icon.textContent = '↻';
+        }
+        if (currentStep > 1) {
+          const prev = document.querySelector(`.stage-item[data-stage="${currentStep - 1}"]`);
+          if (prev) {
+            prev.className = 'stage-item completed';
+            const icon = prev.querySelector('.stage-icon');
+            if (icon) icon.textContent = '✓';
+          }
+        }
+        currentStep++;
+      }
+    }, 1800);
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+
+      clearInterval(interval);
+
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        stageItems.forEach(el => {
+          el.className = 'stage-item completed';
+          const icon = el.querySelector('.stage-icon');
+          if (icon) icon.textContent = '✓';
+        });
+
+        if (genStatusText) {
+          genStatusText.textContent = 'Completed ✅';
+          genStatusText.style.background = '#dcfce7';
+          genStatusText.style.color = '#15803d';
+        }
+
+        btnReloadPage?.classList.remove('hidden');
+        showToast('Editorial generation complete! Draft ready. 🎉');
+      } else {
+        if (genStatusText) {
+          genStatusText.textContent = 'Failed ❌';
+          genStatusText.style.background = '#fee2e2';
+          genStatusText.style.color = '#b91c1c';
+        }
+        if (modalErrorMsg) {
+          modalErrorMsg.textContent = data.error || 'Generation failed.';
+          modalErrorMsg.classList.remove('hidden');
+        }
+        btnCloseModal?.classList.remove('hidden');
+      }
+    } catch (e: any) {
+      clearInterval(interval);
+      if (modalErrorMsg) {
+        modalErrorMsg.textContent = e.message || 'Network communication error.';
+        modalErrorMsg.classList.remove('hidden');
+      }
+      btnCloseModal?.classList.remove('hidden');
+    }
+  });
+
+  btnCloseModal?.addEventListener('click', () => genModal?.classList.add('hidden'));
+  btnReloadPage?.addEventListener('click', () => window.location.reload());
+
+  // Image Generation with Runware FLUX.1 Schnell
+  const btnGenImg = document.getElementById('btn-generate-image') as HTMLButtonElement;
+  btnGenImg?.addEventListener('click', async () => {
+    const isRegen = btnGenImg.textContent?.includes('Regenerate');
+    const confirmMsg = isRegen 
+      ? 'Regenerate a new recipe hero image with Runware FLUX.1 Schnell? This will replace the current hero image.'
+      : 'Generate a new recipe hero image with Runware FLUX.1 Schnell?';
+    
+    if (!confirm(confirmMsg)) return;
+
+    btnGenImg.disabled = true;
+    btnGenImg.textContent = '↻ Generating with FLUX.1 Schnell...';
+
+    try {
+      const res = await fetch('/api/recipes/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('Hero image generated and saved to R2! 🎨');
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(data.error || 'Image generation failed.', true);
+        btnGenImg.disabled = false;
+        btnGenImg.textContent = isRegen ? '↺ Regenerate Image' : '⚡ Generate Hero Image';
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error.', true);
+      btnGenImg.disabled = false;
+      btnGenImg.textContent = isRegen ? '↺ Regenerate Image' : '⚡ Generate Hero Image';
+    }
+  });
+
+  // Re-run Quality Assessment
+  const btnQuality = document.getElementById('btn-run-quality-check') as HTMLButtonElement;
+  btnQuality?.addEventListener('click', async () => {
+    btnQuality.disabled = true;
+    btnQuality.textContent = '🔍 Evaluating Quality...';
+    try {
+      const res = await fetch('/api/quality/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`Quality Score: ${data.report.score}/100 (${data.report.status})! Updating view...`);
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        showToast(data.error || 'Quality evaluation failed.', true);
+        btnQuality.disabled = false;
+        btnQuality.textContent = '🔍 Re-run Quality Assessment';
+      }
+    } catch (e: any) {
+      showToast(e.message, true);
+      btnQuality.disabled = false;
+      btnQuality.textContent = '🔍 Re-run Quality Assessment';
+    }
+  });
+
+  // Auto-Fix & Solve Quality Issues Handler
+  async function handleSolveQualityIssues(issueIndex?: number, issueType?: string) {
+    const btnAutoFix = document.getElementById('btn-auto-fix-issues') as HTMLButtonElement | null;
+    const btnHeader = document.getElementById('btn-solve-issues-header') as HTMLButtonElement | null;
+    const allActionBtns = document.querySelectorAll('.btn-solve-single-issue, #btn-auto-fix-issues, #btn-solve-issues-header') as NodeListOf<HTMLButtonElement>;
+
+    allActionBtns.forEach(b => { b.disabled = true; });
+    if (btnAutoFix) btnAutoFix.textContent = '🛠️ Solving Issues...';
+    if (btnHeader) btnHeader.textContent = '⏳ Solving...';
+
+    try {
+      showToast('Repairing detected issues and verifying facts... 🛠️');
+      const res = await fetch('/api/quality/repair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipeId, issueIndex, issueType })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        showToast(`✨ Issues solved! New Quality Score: ${data.report.score}/100 (${data.report.status}) 🎉`);
+
+        // Live-update form textareas if present
+        if (data.content) {
+          const c = data.content;
+          const setVal = (id: string, val: any) => {
+            const el = document.getElementById(id) as HTMLTextAreaElement | HTMLInputElement | null;
+            if (el && val !== undefined) {
+              if (Array.isArray(val)) {
+                el.value = val.join('\n');
+              } else {
+                el.value = String(val);
+              }
+            }
+          };
+          if (c.introduction) setVal('introduction', c.introduction);
+          if (c.why_this_recipe) setVal('why_this_recipe', c.why_this_recipe);
+          if (c.cooking_guidance) setVal('cooking_guidance', c.cooking_guidance);
+          if (c.tips) setVal('tips', c.tips);
+          if (c.serving_suggestions) setVal('serving_suggestions', c.serving_suggestions);
+          if (c.storage) setVal('storage', c.storage);
+        }
+
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(data.error || 'Failed to auto-repair quality issues.', true);
+        allActionBtns.forEach(b => { b.disabled = false; });
+        if (btnAutoFix) btnAutoFix.textContent = '✨ Auto-Fix & Solve Issues';
+        if (btnHeader) btnHeader.textContent = '✨ Solve Issues';
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error.', true);
+      allActionBtns.forEach(b => { b.disabled = false; });
+      if (btnAutoFix) btnAutoFix.textContent = '✨ Auto-Fix & Solve Issues';
+      if (btnHeader) btnHeader.textContent = '✨ Solve Issues';
+    }
+  }
+
+  document.getElementById('btn-auto-fix-issues')?.addEventListener('click', () => handleSolveQualityIssues());
+  document.getElementById('btn-solve-issues-header')?.addEventListener('click', () => handleSolveQualityIssues());
+  document.querySelectorAll('.btn-solve-single-issue').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const target = e.currentTarget as HTMLElement;
+      const idx = target.dataset.issueIndex ? parseInt(target.dataset.issueIndex, 10) : undefined;
+      const type = target.dataset.issueType;
+      handleSolveQualityIssues(idx, type);
+    });
+  });
+
+  // Image Management Actions
+  document.querySelectorAll('.btn-use-image').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const target = e.currentTarget as HTMLButtonElement;
+      const heroType = target.dataset.type;
+      const heroKey = target.dataset.key;
+      target.disabled = true;
+      target.textContent = 'Updating...';
+
+      try {
+        const res = await fetch('/api/recipes/image-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'SET_ACTIVE_HERO', recipeId, heroType, heroKey })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`✓ Active hero set to ${heroType}!`);
+          setTimeout(() => window.location.reload(), 800);
+        } else {
+          showToast(data.error || 'Failed to update hero image', true);
+          target.disabled = false;
+          target.textContent = '✓ Use as Hero';
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Network error', true);
+        target.disabled = false;
+        target.textContent = '✓ Use as Hero';
+      }
+    });
+  });
+
+  document.querySelectorAll('.select-rights-status').forEach(select => {
+    select.addEventListener('change', async (e) => {
+      const target = e.currentTarget as HTMLSelectElement;
+      const rightsStatus = target.value;
+
+      try {
+        const res = await fetch('/api/recipes/image-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'UPDATE_RIGHTS_STATUS', recipeId, rightsStatus })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`Rights status updated to ${rightsStatus}`);
+          setTimeout(() => window.location.reload(), 600);
+        } else {
+          showToast(data.error || 'Failed to update rights', true);
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Network error', true);
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-reimport-source').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const target = e.currentTarget as HTMLButtonElement;
+      target.disabled = true;
+      target.textContent = '📥 Importing...';
+
+      try {
+        showToast('Downloading source recipe image to Cloudflare R2... ⏳');
+        const res = await fetch('/api/recipes/image-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'RETRY_SOURCE_IMPORT', recipeId, force: true })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('Source image imported and saved to R2! 📸');
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          showToast(data.error || 'Failed to import source image.', true);
+          target.disabled = false;
+          target.textContent = '↻ Re-import';
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Network error.', true);
+        target.disabled = false;
+        target.textContent = '↻ Re-import';
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-generate-ai-img').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const target = e.currentTarget as HTMLButtonElement;
+      target.disabled = true;
+      target.textContent = '↻ Generating FLUX.1...';
+
+      try {
+        showToast('Generating hero image with Runware FLUX.1 Schnell... 🎨');
+        const res = await fetch('/api/recipes/image-actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'GENERATE_AI_IMAGE', recipeId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('AI image generated and stored in R2! 🚀');
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          showToast(data.error || 'AI image generation failed.', true);
+          target.disabled = false;
+          target.textContent = '✨ Generate AI Image';
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Network error.', true);
+        target.disabled = false;
+        target.textContent = '✨ Generate AI Image';
+      }
+    });
+  });
+</script>

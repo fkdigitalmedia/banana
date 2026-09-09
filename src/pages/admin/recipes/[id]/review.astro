@@ -1,0 +1,1716 @@
+---
+export const prerender = false;
+
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { getRecipeWithAllDetails } from '../../../../lib/db/recipes';
+import { reconstructFactSheet } from '../../../../lib/pipeline/runner';
+import { evaluateRecipeQuality } from '../../../../lib/quality/engine';
+import { getRecipeRevisions } from '../../../../lib/editorial/workflow';
+import { generateRecipeJsonLd, generateBreadcrumbJsonLd } from '../../../../lib/seo/jsonld';
+
+const { id } = Astro.params;
+const recipeId = parseInt(id || '0', 10);
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+
+if (!recipeId || !db) {
+  return Astro.redirect('/admin/review/');
+}
+
+const recipe = await getRecipeWithAllDetails(db, recipeId);
+if (!recipe) {
+  return Astro.redirect('/admin/review/');
+}
+
+const content = recipe.content || {};
+const seo = recipe.seo || {};
+const revisions = await getRecipeRevisions(db, recipeId, 15);
+
+// Reconstruct FactSheet and run Quality Engine
+const factSheet = reconstructFactSheet(recipe);
+const parseIfJson = (v: any) => typeof v === 'string' && (v.startsWith('[') || v.startsWith('{')) ? JSON.parse(v) : v;
+
+const evalContent = {
+  introduction: content.introduction || '',
+  whyThisRecipe: content.why_this_recipe || '',
+  ingredientGuidance: parseIfJson(content.ingredient_guidance) || [],
+  cookingGuidance: parseIfJson(content.cooking_guidance) || [],
+  tips: parseIfJson(content.tips) || [],
+  variations: parseIfJson(content.variations) || [],
+  servingSuggestions: content.serving_suggestions || '',
+  storage: content.storage || '',
+  faq: parseIfJson(content.faq) || [],
+  seo: {
+    title: seo.seo_title || recipe.title,
+    metaDescription: seo.meta_description || recipe.description || '',
+    slug: recipe.slug
+  }
+};
+
+const qualityReport = evaluateRecipeQuality(factSheet.lockedFacts, evalContent);
+const isStale = Boolean(recipe.content_stale);
+const score = qualityReport.score;
+const canPublish = recipe.status === 'APPROVED';
+
+// JSON-LD Schema preview
+const jsonLdPreview = generateRecipeJsonLd(
+  recipe,
+  recipe.ingredients || [],
+  recipe.instructions || [],
+  content,
+  seo,
+  siteUrl,
+  r2BaseUrl
+);
+
+const breadcrumbPreview = generateBreadcrumbJsonLd(recipe.title, recipe.slug, siteUrl, recipe.category_name, recipe.category_slug);
+---
+
+<AdminLayout title={`Review: ${recipe.title}`} activePage="review">
+  <div class="review-page">
+    <!-- Top Action & Status Bar -->
+    <div class="top-nav-bar">
+      <div class="nav-left">
+        <a href="/admin/review/" class="back-link">← Back to Review Queue</a>
+        <div class="title-with-status">
+          <h1>{recipe.title}</h1>
+          <span class={`status-pill status-${recipe.status?.toLowerCase()}`}>{recipe.status}</span>
+          {isStale && (
+            <span class="stale-alert-pill" title="Locked recipe facts were changed. Re-review recommended.">
+              ⚠ CONTENT STALE
+            </span>
+          )}
+        </div>
+      </div>
+      <div class="nav-actions">
+        <a href={`/admin/recipes/${recipe.id}/preview/`} target="_blank" class="btn-secondary">
+          👁 Public Preview
+        </a>
+        <button id="rerun-quality-btn" class="btn-secondary">
+          ↺ Re-run Quality Check
+        </button>
+        {recipe.status !== 'APPROVED' && recipe.status !== 'PUBLISHED' && (
+          <button id="approve-recipe-btn" class="btn-primary">
+            ✓ Approve for Publishing
+          </button>
+        )}
+        {recipe.status === 'APPROVED' && (
+          <button id="publish-recipe-btn" class="btn-publish">
+            🚀 Publish Live
+          </button>
+        )}
+        {recipe.status === 'PUBLISHED' && (
+          <button id="unpublish-recipe-btn" class="btn-danger">
+            ⏸ Unpublish
+          </button>
+        )}
+      </div>
+    </div>
+
+    <!-- Quality Gate & Score Card -->
+    <div class="quality-gate-banner">
+      <div class="score-card">
+        <div class="score-main">
+          <div class={`score-circle ${score >= 80 ? 'circle-pass' : score >= 50 ? 'circle-warn' : 'circle-fail'}`}>
+            <span class="score-val">{score}</span>
+            <span class="score-max">/100</span>
+          </div>
+          <div>
+            <div class="score-title">Content Quality & Fact Consistency</div>
+            <div class="score-desc">
+              {score >= 80 ? 'Quality gate passed. Meets all editorial and factual standards.' : 'Quality issues detected. Must be resolved before publishing.'}
+            </div>
+          </div>
+        </div>
+
+        <div class="checks-grid">
+          <div class="check-item">
+            <span class="check-icon">{qualityReport.categories.facts.score >= 80 ? '✓' : '✗'}</span>
+            <span class="check-label">FACT CONSISTENCY</span>
+            <span class="check-badge">{qualityReport.categories.facts.score >= 80 ? 'PASS' : 'FAIL'}</span>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">{qualityReport.categories.completeness.score >= 80 ? '✓' : '✗'}</span>
+            <span class="check-label">COMPLETENESS</span>
+            <span class="check-badge">{qualityReport.categories.completeness.score >= 80 ? 'PASS' : 'FAIL'}</span>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">{qualityReport.categories.repetition.score >= 80 ? '✓' : '✗'}</span>
+            <span class="check-label">REPETITION</span>
+            <span class="check-badge">{qualityReport.categories.repetition.score >= 80 ? 'PASS' : 'FAIL'}</span>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">{qualityReport.categories.seo.score >= 80 ? '✓' : '✗'}</span>
+            <span class="check-label">SEO QUALITY</span>
+            <span class="check-badge">{qualityReport.categories.seo.score >= 80 ? 'PASS' : 'FAIL'}</span>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">{qualityReport.categories?.schema?.score >= 80 ? '✓' : '✗'}</span>
+            <span class="check-label">STRUCTURED DATA</span>
+            <span class="check-badge">{qualityReport.categories?.schema?.score >= 80 ? 'PASS' : 'FAIL'}</span>
+          </div>
+          <div class="check-item">
+            <span class="check-icon">{qualityReport.categories?.safety?.score >= 80 ? '✓' : '✗'}</span>
+            <span class="check-label">FACT SAFETY (v2)</span>
+            <span class="check-badge">{qualityReport.categories?.safety?.score >= 80 ? 'PASS' : 'FAIL'}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Issues List -->
+      {qualityReport.issues.length > 0 && (
+        <div class="issues-box">
+          <div class="issues-header">
+            <h4>Detected Issues & Warnings ({qualityReport.issues.length})</h4>
+          </div>
+          <div class="issues-list">
+            {qualityReport.issues.map((issue) => (
+              <div class={`issue-item severity-${issue.severity.toLowerCase()}`}>
+                <div class="issue-badge">{issue.severity}</div>
+                <div class="issue-content">
+                  <div class="issue-msg">{issue.message}</div>
+                  <div class="issue-details">
+                    <span>Category: <strong>{issue.category}</strong></span>
+                    {issue.section && <span>Section: <strong>{issue.section}</strong></span>}
+                    {issue.autoFixable && <span class="badge-autofix">Auto-repairable</span>}
+                  </div>
+                </div>
+                {issue.section && (
+                  <button class="btn-fix-issue" onclick={`regenerateSpecificSection('${issue.section}')`}>
+                    ↺ Regenerate {issue.section}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+
+    <!-- Main Editorial Layout: Left (Locked Facts) vs Right (Generated Content) -->
+    <div class="editorial-comparison-grid">
+      
+      <!-- LEFT COLUMN: LOCKED RECIPE FACTS -->
+      <div class="locked-facts-column">
+        <div class="column-header locked-header">
+          <div class="header-icon-title">
+            <span class="lock-icon">🔒</span>
+            <h3>LOCKED RECIPE FACTS</h3>
+          </div>
+        <!-- EXTRACTION PROVENANCE & QUALITY CARD -->
+        <div class="provenance-card">
+          <div class="provenance-grid">
+            <div class="prov-item">
+              <span class="prov-label">Method</span>
+              <span class="prov-val">{recipe.extraction_method || 'JSON-LD'}</span>
+            </div>
+            <div class="prov-item">
+              <span class="prov-label">Quality</span>
+              <span class={`prov-badge badge-${(recipe.extraction_confidence || 'HIGH').toLowerCase()}`}>
+                {recipe.extraction_confidence || 'HIGH'}
+              </span>
+            </div>
+            <div class="prov-item">
+              <span class="prov-label">Imported</span>
+              <span class="prov-val">{recipe.created_at ? new Date(recipe.created_at).toLocaleDateString() : '—'}</span>
+            </div>
+          </div>
+          {recipe.source_url && (
+            <div class="prov-source">
+              <span class="prov-label">Source URL:</span>
+              <a href={recipe.source_url} target="_blank" rel="noopener noreferrer" class="source-url-link">
+                {recipe.source_url}
+              </a>
+            </div>
+          )}
+          {recipe.extraction_confidence === 'LOW' && (
+            <div class="extraction-warning">
+              ⚠️ <strong>Review Required:</strong> Extraction confidence is LOW. Please carefully inspect locked facts below before publishing.
+            </div>
+          )}
+        </div>
+
+        <div class="facts-card">
+          <div class="fact-row">
+            <span class="fact-label">Recipe Title</span>
+            <span class="fact-value" id="fact-title-val">{recipe.title}</span>
+          </div>
+
+          <div class="fact-meta-grid">
+            <div class="meta-box">
+              <span class="meta-box-label">Prep Time</span>
+              <span class="meta-box-val">{recipe.prep_time || 0} min</span>
+            </div>
+            <div class="meta-box">
+              <span class="meta-box-label">Cook Time</span>
+              <span class="meta-box-val">{recipe.cook_time || 0} min</span>
+            </div>
+            <div class="meta-box">
+              <span class="meta-box-label">Total Time</span>
+              <span class="meta-box-val">{recipe.total_time || 0} min</span>
+            </div>
+            <div class="meta-box">
+              <span class="meta-box-label">Servings / Yield</span>
+              <span class="meta-box-val">{recipe.yield_text || recipe.servings || 'N/A'}</span>
+            </div>
+          </div>
+
+          {factSheet.lockedFacts.temperature && (
+            <div class="temperature-alert">
+              <span class="temp-icon">🌡</span>
+              <span>Baking Temperature: <strong>{factSheet.lockedFacts.temperature}</strong></span>
+            </div>
+          )}
+
+          <div class="facts-section-title">Ingredients ({recipe.ingredients?.length || 0})</div>
+          <ul class="locked-ingredients-list">
+            {(recipe.ingredients || []).map((ing: any) => (
+              <li>
+                <span class="ing-qty">{ing.quantity} {ing.unit}</span>
+                <span class="ing-name"><strong>{ing.name}</strong></span>
+                {ing.notes && <span class="ing-notes">({ing.notes})</span>}
+              </li>
+            ))}
+          </ul>
+
+          <div class="facts-section-title">Instructions ({recipe.instructions?.length || 0} steps)</div>
+          <ol class="locked-instructions-list">
+            {(recipe.instructions || []).map((inst: any) => (
+              <li>
+                <div class="step-num">{inst.step_number}</div>
+                <div class="step-text">{inst.instruction}</div>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <!-- Facts Edit Drawer / Modal (Initially Hidden) -->
+        <div id="facts-edit-drawer" class="facts-drawer hidden">
+          <div class="drawer-header">
+            <h4>Edit Locked Recipe Facts</h4>
+            <button id="close-facts-drawer" class="btn-close-drawer">✕</button>
+          </div>
+          <div class="drawer-warning">
+            ⚠ Warning: Editing locked facts will mark existing generated content as <strong>STALE</strong> and invalidate publishing approval.
+          </div>
+          <form id="edit-facts-form">
+            <div class="form-group">
+              <label>Title</label>
+              <input type="text" name="title" value={recipe.title} class="form-input" required />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Prep (min)</label>
+                <input type="number" name="prep_time" value={recipe.prep_time} class="form-input" />
+              </div>
+              <div class="form-group">
+                <label>Cook (min)</label>
+                <input type="number" name="cook_time" value={recipe.cook_time} class="form-input" />
+              </div>
+              <div class="form-group">
+                <label>Servings</label>
+                <input type="text" name="servings" value={recipe.servings} class="form-input" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Ingredients (one per line, e.g. "2 cups all-purpose flour")</label>
+              <textarea name="raw_ingredients" rows="8" class="form-textarea">{(recipe.ingredients || []).map((i: any) => `${i.quantity || ''} ${i.unit || ''} ${i.name} ${i.notes ? `(${i.notes})` : ''}`.trim()).join('\n')}</textarea>
+            </div>
+            <div class="form-group">
+              <label>Instructions (one per line)</label>
+              <textarea name="raw_instructions" rows="8" class="form-textarea">{(recipe.instructions || []).map((i: any) => i.instruction).join('\n')}</textarea>
+            </div>
+            <div class="drawer-actions">
+              <button type="submit" class="btn-primary">Save Facts & Mark Stale</button>
+              <button type="button" id="cancel-facts-btn" class="btn-secondary">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: GENERATED CONTENT REVIEW -->
+      <div class="generated-content-column">
+        <div class="column-header">
+          <h3>GENERATED EDITORIAL CONTENT</h3>
+          <span class="ai-badge">DeepSeek AI Generated</span>
+        </div>
+
+        <!-- Section: Introduction -->
+        <div class="content-section-box" id="sec-introduction">
+          <div class="section-box-header">
+            <h4>1. Introduction & Positioning</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('introduction')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('introduction')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-introduction">
+            <p class="intro-paragraph">{content.introduction || 'No introduction generated yet.'}</p>
+            {content.why_this_recipe && (
+              <div class="why-subbox">
+                <strong>Why You'll Love This Recipe:</strong>
+                <p>{content.why_this_recipe}</p>
+              </div>
+            )}
+          </div>
+          <div class="section-edit-form hidden" id="edit-introduction">
+            <textarea class="edit-textarea" rows="4">{content.introduction || ''}</textarea>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveSectionContent('introduction')">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('introduction')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Ingredient Guidance -->
+        <div class="content-section-box" id="sec-ingredientGuidance">
+          <div class="section-box-header">
+            <h4>2. Ingredient Guidance</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('ingredientGuidance')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('ingredientGuidance')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-ingredientGuidance">
+            {evalContent.ingredientGuidance.length === 0 ? (
+              <p class="empty-note">No ingredient guidance generated.</p>
+            ) : (
+              <div class="guidance-items-list">
+                {evalContent.ingredientGuidance.map((item: any) => (
+                  <div class="guidance-item">
+                    <strong>{item.ingredient}:</strong> {item.guidance}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div class="section-edit-form hidden" id="edit-ingredientGuidance">
+            <textarea class="edit-textarea" rows="6">{JSON.stringify(evalContent.ingredientGuidance, null, 2)}</textarea>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveSectionContent('ingredientGuidance', true)">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('ingredientGuidance')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Cooking Guidance -->
+        <div class="content-section-box" id="sec-cookingGuidance">
+          <div class="section-box-header">
+            <h4>3. Step-by-Step Cooking Notes</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('cookingGuidance')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('cookingGuidance')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-cookingGuidance">
+            {evalContent.cookingGuidance.length === 0 ? (
+              <p class="empty-note">No step guidance generated.</p>
+            ) : (
+              <ul class="cooking-notes-list">
+                {evalContent.cookingGuidance.map((note: string) => (
+                  <li>{note}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div class="section-edit-form hidden" id="edit-cookingGuidance">
+            <textarea class="edit-textarea" rows="6">{evalContent.cookingGuidance.join('\n')}</textarea>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveSectionLines('cookingGuidance')">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('cookingGuidance')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Tips -->
+        <div class="content-section-box" id="sec-tips">
+          <div class="section-box-header">
+            <h4>4. Baker's Pro Tips</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('tips')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('tips')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-tips">
+            {evalContent.tips.length === 0 ? (
+              <p class="empty-note">No tips generated.</p>
+            ) : (
+              <ul class="tips-review-list">
+                {evalContent.tips.map((t: string) => (
+                  <li>💡 {t}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div class="section-edit-form hidden" id="edit-tips">
+            <textarea class="edit-textarea" rows="6">{evalContent.tips.join('\n')}</textarea>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveSectionLines('tips')">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('tips')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Variations -->
+        <div class="content-section-box" id="sec-variations">
+          <div class="section-box-header">
+            <h4>5. Variations</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('variations')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('variations')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-variations">
+            {evalContent.variations.length === 0 ? (
+              <p class="empty-note">No variations generated.</p>
+            ) : (
+              <div class="variations-review-list">
+                {evalContent.variations.map((v: any) => (
+                  <div class="var-item">
+                    <strong>{v.name}:</strong> {v.description}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div class="section-edit-form hidden" id="edit-variations">
+            <textarea class="edit-textarea" rows="6">{JSON.stringify(evalContent.variations, null, 2)}</textarea>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveSectionContent('variations', true)">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('variations')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Storage & Serving -->
+        <div class="content-section-box" id="sec-storage">
+          <div class="section-box-header">
+            <h4>6. Serving & Storage</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('storage')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('storage')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-storage">
+            <div class="storage-row">
+              <strong>Serving:</strong> {content.serving_suggestions || 'None specified.'}
+            </div>
+            <div class="storage-row">
+              <strong>Storage & Freezing:</strong> {content.storage || 'None specified.'}
+            </div>
+          </div>
+          <div class="section-edit-form hidden" id="edit-storage">
+            <div class="form-group">
+              <label>Serving Suggestions</label>
+              <input type="text" id="edit-serving-input" value={content.serving_suggestions || ''} class="form-input" />
+            </div>
+            <div class="form-group">
+              <label>Storage Guidance</label>
+              <textarea id="edit-storage-input" rows="3" class="form-textarea">{content.storage || ''}</textarea>
+            </div>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveStorageServing()">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('storage')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: FAQ -->
+        <div class="content-section-box" id="sec-faq">
+          <div class="section-box-header">
+            <h4>7. Frequently Asked Questions ({evalContent.faq.length})</h4>
+            <div class="section-actions">
+              <button class="btn-regen" onclick="regenerateSpecificSection('faq')">↺ Regenerate</button>
+              <button class="btn-edit" onclick="toggleEditSection('faq')">✏ Edit</button>
+            </div>
+          </div>
+          <div class="section-box-body" id="view-faq">
+            {evalContent.faq.length === 0 ? (
+              <p class="empty-note">No FAQs generated.</p>
+            ) : (
+              <div class="faq-review-list">
+                {evalContent.faq.map((item: any) => (
+                  <details class="faq-item">
+                    <summary>{item.question}</summary>
+                    <p>{item.answer}</p>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
+          <div class="section-edit-form hidden" id="edit-faq">
+            <textarea class="edit-textarea" rows="8">{JSON.stringify(evalContent.faq, null, 2)}</textarea>
+            <div class="edit-btn-row">
+              <button class="btn-save-sm" onclick="saveSectionContent('faq', true)">Save Section</button>
+              <button class="btn-cancel-sm" onclick="toggleEditSection('faq')">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- HERO IMAGE REVIEW CARD -->
+        <div class="image-review-card">
+          <div class="section-box-header">
+            <h4>8. Hero Image Review</h4>
+            <div class="section-actions">
+              <button id="regen-image-btn" class="btn-regen">↺ Regenerate Image</button>
+            </div>
+          </div>
+          <div class="image-review-body">
+            <div class="image-preview-box">
+              {recipe.hero_image_key ? (
+                <img 
+                  src={`/api/image/${recipe.hero_image_key}`} 
+                  alt={recipe.title} 
+                  class="hero-preview-img" 
+                />
+              ) : (
+                <div class="no-img-box">No hero image generated yet</div>
+              )}
+            </div>
+            <div class="image-meta-info">
+              <div>Status: <span class={`pill-image img-${recipe.image_status?.toLowerCase()}`}>{recipe.image_status || 'PENDING'}</span></div>
+              <div>Key: <code>{recipe.hero_image_key || 'none'}</code></div>
+              <div>Model: <strong>{recipe.image_model || 'FLUX.1 Schnell'}</strong></div>
+              <div>Provider: <strong>{recipe.image_provider || 'Runware'}</strong></div>
+              {recipe.image_prompt && (
+                <div class="image-prompt-box">
+                  <strong>Prompt:</strong> {recipe.image_prompt}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <!-- TECHNICAL SEO & SCHEMA REVIEW -->
+        <div class="seo-review-card">
+          <div class="section-box-header">
+            <h4>9. Technical SEO & Schema Markup</h4>
+            <button id="edit-seo-btn" class="btn-edit">✏ Edit SEO</button>
+          </div>
+          <div class="seo-review-body">
+            <div class="seo-row">
+              <span class="seo-label">SEO Title:</span>
+              <span class="seo-val">{seo.seo_title || recipe.title}</span>
+              <span class="char-count">({(seo.seo_title || recipe.title).length} chars)</span>
+            </div>
+            <div class="seo-row">
+              <span class="seo-label">Meta Description:</span>
+              <span class="seo-val">{seo.meta_description || recipe.description || 'N/A'}</span>
+              <span class="char-count">({(seo.meta_description || recipe.description || '').length} chars)</span>
+            </div>
+            <div class="seo-row">
+              <span class="seo-label">URL Slug:</span>
+              <code>/{recipe.slug}/</code>
+            </div>
+
+            <!-- Tabs: Schema JSON-LD & Breadcrumbs -->
+            <div class="schema-tabs-container">
+              <details class="schema-details">
+                <summary>View Recipe JSON-LD Schema</summary>
+                <pre class="schema-code"><code>{jsonLdPreview}</code></pre>
+              </details>
+              <details class="schema-details">
+                <summary>View BreadcrumbList Schema</summary>
+                <pre class="schema-code"><code>{breadcrumbPreview}</code></pre>
+              </details>
+            </div>
+
+            <!-- SEO Edit Drawer (Hidden) -->
+            <div id="seo-edit-drawer" class="seo-drawer hidden">
+              <form id="edit-seo-form">
+                <div class="form-group">
+                  <label>SEO Title</label>
+                  <input type="text" name="seo_title" value={seo.seo_title || recipe.title} class="form-input" />
+                </div>
+                <div class="form-group">
+                  <label>Meta Description</label>
+                  <textarea name="meta_description" rows="3" class="form-textarea">{seo.meta_description || recipe.description || ''}</textarea>
+                </div>
+                <div class="form-group">
+                  <label>Slug</label>
+                  <input type="text" name="slug" value={recipe.slug} class="form-input" />
+                </div>
+                <div class="drawer-actions">
+                  <button type="submit" class="btn-primary">Save SEO Metadata</button>
+                  <button type="button" id="cancel-seo-btn" class="btn-secondary">Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- REVISION HISTORY AUDIT LOG -->
+        <div class="revisions-card">
+          <h4>Revision Audit Log ({revisions.length})</h4>
+          {revisions.length === 0 ? (
+            <p class="empty-note">No recorded revisions yet.</p>
+          ) : (
+            <ul class="revisions-timeline">
+              {revisions.map((rev) => (
+                <li class="timeline-item">
+                  <span class={`rev-badge rev-${rev.change_type.toLowerCase()}`}>{rev.change_type}</span>
+                  <span class="rev-time">{new Date(rev.changed_at).toLocaleString()}</span>
+                  <span class="rev-user">by <strong>{rev.changed_by}</strong></span>
+                  {rev.notes && <span class="rev-notes">— {rev.notes}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .review-page {
+      max-width: 1300px;
+      margin: 0 auto;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    /* Top Navigation Bar */
+    .top-nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fff;
+      padding: 1rem 1.5rem;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+    }
+    .back-link {
+      display: inline-block;
+      font-size: 0.85rem;
+      color: #71717a;
+      text-decoration: none;
+      margin-bottom: 0.25rem;
+    }
+    .back-link:hover { color: #18181b; }
+    .title-with-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      color: #18181b;
+    }
+    .status-pill {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .status-review_required { background: #fef3c7; color: #92400e; }
+    .status-approved { background: #dbeafe; color: #1e40af; }
+    .status-published { background: #dcfce7; color: #166534; }
+    .status-draft { background: #f4f4f5; color: #52525b; }
+    .status-unpublished { background: #e4e4e7; color: #71717a; }
+    .stale-alert-pill {
+      background: #fee2e2;
+      color: #b91c1c;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .btn-secondary {
+      background: #f4f4f5;
+      color: #18181b;
+      border: 1px solid #d4d4d8;
+      padding: 0.5rem 0.9rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-secondary:hover { background: #e4e4e7; }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-publish {
+      background: #16a34a;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-publish:hover { background: #15803d; }
+    .btn-danger {
+      background: #dc2626;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Quality Gate & Score Card */
+    .quality-gate-banner {
+      background: #fff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .score-card {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    .score-main {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .score-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+    }
+    .circle-pass { background: #dcfce7; color: #166534; }
+    .circle-warn { background: #fef3c7; color: #92400e; }
+    .circle-fail { background: #fee2e2; color: #991b1b; }
+    .score-val { font-size: 1.4rem; line-height: 1; }
+    .score-max { font-size: 0.7rem; opacity: 0.8; }
+    .score-title { font-size: 1rem; font-weight: 700; color: #18181b; }
+    .score-desc { font-size: 0.85rem; color: #71717a; margin-top: 0.2rem; }
+
+    .checks-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #f4f4f5;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+    }
+    .check-label { font-weight: 600; color: #52525b; }
+    .check-badge { font-weight: 700; color: #16a34a; }
+
+    /* Issues Box */
+    .issues-box {
+      margin-top: 1.25rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid #f4f4f5;
+    }
+    .issues-header h4 {
+      margin: 0 0 0.75rem 0;
+      color: #991b1b;
+      font-size: 0.95rem;
+    }
+    .issues-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .issue-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      border-left: 4px solid;
+    }
+    .severity-high, .severity-critical {
+      background: #fef2f2;
+      border-color: #dc2626;
+    }
+    .severity-medium, .severity-low {
+      background: #fefce8;
+      border-color: #ca8a04;
+    }
+    .issue-badge {
+      font-weight: 800;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .severity-high .issue-badge { background: #fee2e2; color: #991b1b; }
+    .severity-medium .issue-badge { background: #fef08a; color: #854d0e; }
+    .issue-content {
+      flex: 1;
+      margin: 0 1rem;
+    }
+    .issue-msg { font-weight: 600; color: #18181b; }
+    .issue-details {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.75rem;
+      color: #71717a;
+      margin-top: 0.2rem;
+    }
+    .badge-autofix { color: #2563eb; font-weight: 600; }
+    .btn-fix-issue {
+      background: #fff;
+      border: 1px solid #d4d4d8;
+      padding: 0.35rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-fix-issue:hover { background: #f4f4f5; }
+
+    /* Comparison Grid: 50% / 50% */
+    .editorial-comparison-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    @media (max-width: 1024px) {
+      .editorial-comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .column-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .locked-header h3 {
+      margin: 0;
+      color: #92400e;
+      font-size: 0.95rem;
+      letter-spacing: 0.05em;
+    }
+    .header-icon-title {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .ai-badge {
+      background: #f4f4f5;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      color: #71717a;
+    }
+
+    /* Left Column: Locked Facts */
+    .facts-card {
+      background: #fffdfa;
+      border: 2px solid #fde68a;
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .fact-row {
+      margin-bottom: 1rem;
+    }
+    .fact-label {
+      display: block;
+      font-size: 0.75rem;
+      color: #71717a;
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+    .fact-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #18181b;
+    }
+    .fact-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .meta-box {
+      background: #fff;
+      border: 1px solid #fef08a;
+      padding: 0.5rem;
+      border-radius: 6px;
+    }
+    .meta-box-label {
+      display: block;
+      font-size: 0.7rem;
+      color: #854d0e;
+      font-weight: 600;
+    }
+    .meta-box-val {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #18181b;
+    }
+    .temperature-alert {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 0.6rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .facts-section-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #854d0e;
+      text-transform: uppercase;
+      margin: 1.25rem 0 0.5rem 0;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px solid #fef08a;
+    }
+    .locked-ingredients-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.85rem;
+    }
+    .locked-ingredients-list li {
+      padding: 0.35rem 0;
+      border-bottom: 1px solid #fef9c3;
+    }
+    .ing-qty { font-weight: 600; color: #854d0e; margin-right: 0.4rem; }
+    .ing-notes { color: #a1a1aa; font-style: italic; margin-left: 0.3rem; }
+
+    .locked-instructions-list {
+      padding-left: 1.25rem;
+      margin: 0;
+      font-size: 0.85rem;
+    }
+    .locked-instructions-list li {
+      margin-bottom: 0.75rem;
+      line-height: 1.4;
+    }
+
+    .btn-edit-facts {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      color: #92400e;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Facts Drawer */
+    .facts-drawer, .seo-drawer {
+      background: #fff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-top: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .drawer-header h4 { margin: 0; font-size: 1rem; }
+    .btn-close-drawer {
+      background: none;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .drawer-warning {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      margin-bottom: 1rem;
+    }
+    .form-group {
+      margin-bottom: 0.85rem;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #52525b;
+      margin-bottom: 0.25rem;
+    }
+    .form-input, .form-textarea, .edit-textarea {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #d4d4d8;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+    }
+    .drawer-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    /* Right Column: Content Section Boxes */
+    .content-section-box, .image-review-card, .seo-review-card, .revisions-card {
+      background: #fff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .section-box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #f4f4f5;
+    }
+    .section-box-header h4 {
+      margin: 0;
+      font-size: 0.95rem;
+      color: #18181b;
+    }
+    .section-actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+    .btn-regen, .btn-edit {
+      background: #f4f4f5;
+      border: 1px solid #d4d4d8;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-regen:hover { background: #e4e4e7; }
+    .btn-edit:hover { background: #e4e4e7; }
+
+    .intro-paragraph {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: #27272a;
+      margin: 0 0 0.75rem 0;
+    }
+    .why-subbox {
+      background: #fafafa;
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    .guidance-item, .var-item {
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+    .cooking-notes-list, .tips-review-list {
+      padding-left: 1.25rem;
+      margin: 0;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+    .cooking-notes-list li, .tips-review-list li {
+      margin-bottom: 0.4rem;
+    }
+    .faq-item {
+      margin-bottom: 0.5rem;
+      border: 1px solid #e4e4e7;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+    }
+    .faq-item summary {
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .faq-item p {
+      margin: 0.5rem 0 0 0;
+      color: #52525b;
+    }
+
+    .edit-btn-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .btn-save-sm {
+      background: #18181b;
+      color: #fff;
+      border: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cancel-sm {
+      background: #f4f4f5;
+      color: #52525b;
+      border: 1px solid #d4d4d8;
+      padding: 0.35rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    /* Image Review */
+    .image-review-body {
+      display: flex;
+      gap: 1.25rem;
+      align-items: flex-start;
+    }
+    .image-preview-box {
+      width: 220px;
+      height: 160px;
+      background: #f4f4f5;
+      border-radius: 6px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .hero-preview-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .no-img-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #a1a1aa;
+      font-size: 0.8rem;
+      text-align: center;
+      padding: 1rem;
+    }
+    .image-meta-info {
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    .image-prompt-box {
+      margin-top: 0.5rem;
+      background: #fafafa;
+      padding: 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: #52525b;
+    }
+
+    /* SEO Review */
+    .seo-row {
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+    .seo-label { font-weight: 600; color: #52525b; margin-right: 0.4rem; }
+    .char-count { font-size: 0.75rem; color: #a1a1aa; margin-left: 0.3rem; }
+    .schema-details {
+      margin-top: 0.75rem;
+      border: 1px solid #e4e4e7;
+      border-radius: 6px;
+      padding: 0.5rem;
+      font-size: 0.8rem;
+    }
+    .schema-code {
+      background: #18181b;
+      color: #a7f3d0;
+      padding: 0.75rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 200px;
+      font-size: 0.75rem;
+    }
+
+    /* Revisions */
+    .revisions-timeline {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.8rem;
+    }
+    .timeline-item {
+      padding: 0.4rem 0;
+      border-bottom: 1px solid #f4f4f5;
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .rev-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      background: #e4e4e7;
+    }
+    .rev-approved { background: #dbeafe; color: #1e40af; }
+    .rev-published { background: #dcfce7; color: #166534; }
+    .rev-fact_edit { background: #fee2e2; color: #991b1b; }
+    .rev-content_edit { background: #fef08a; color: #854d0e; }
+    .rev-section_regenerated { background: #ede9fe; color: #5b21b6; }
+    .rev-time { color: #71717a; }
+
+    .hidden { display: none !important; }
+  </style>
+
+  <!-- Client-side Interactive Logic -->
+  <script define:vars={{ recipeId }}>
+    // Approve Recipe Button
+    const approveBtn = document.getElementById('approve-recipe-btn');
+    if (approveBtn) {
+      approveBtn.addEventListener('click', async () => {
+        approveBtn.disabled = true;
+        approveBtn.textContent = 'Validating...';
+        try {
+          const res = await fetch('/api/editorial/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('✓ Recipe APPROVED for publishing!');
+            window.location.reload();
+          } else {
+            alert('Approval Blocked: ' + (data.error || 'Validation failed.'));
+            approveBtn.disabled = false;
+            approveBtn.textContent = '✓ Approve for Publishing';
+          }
+        } catch (e) {
+          alert('Network error while approving recipe.');
+          approveBtn.disabled = false;
+          approveBtn.textContent = '✓ Approve for Publishing';
+        }
+      });
+    }
+
+    // Publish Live Button
+    const publishBtn = document.getElementById('publish-recipe-btn');
+    if (publishBtn) {
+      publishBtn.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to PUBLISH this recipe live to the website?')) return;
+        publishBtn.disabled = true;
+        publishBtn.textContent = 'Publishing...';
+        try {
+          const res = await fetch('/api/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('🚀 Recipe published successfully!');
+            window.location.reload();
+          } else {
+            alert('Publishing failed: ' + (data.error || 'Server error'));
+            publishBtn.disabled = false;
+            publishBtn.textContent = '🚀 Publish Live';
+          }
+        } catch (e) {
+          alert('Network error while publishing.');
+          publishBtn.disabled = false;
+        }
+      });
+    }
+
+    // Unpublish Button
+    const unpubBtn = document.getElementById('unpublish-recipe-btn');
+    if (unpubBtn) {
+      unpubBtn.addEventListener('click', async () => {
+        if (!confirm('Unpublish this recipe? The public page will return 404.')) return;
+        try {
+          const res = await fetch('/api/unpublish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('Recipe unpublished.');
+            window.location.reload();
+          } else {
+            alert('Unpublish failed: ' + (data.error || 'Error'));
+          }
+        } catch (e) {
+          alert('Network error while unpublishing.');
+        }
+      });
+    }
+
+    // Re-run Quality Check Button
+    const rerunQualityBtn = document.getElementById('rerun-quality-btn');
+    if (rerunQualityBtn) {
+      rerunQualityBtn.addEventListener('click', async () => {
+        rerunQualityBtn.disabled = true;
+        rerunQualityBtn.textContent = 'Evaluating...';
+        try {
+          const res = await fetch('/api/quality/evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            window.location.reload();
+          } else {
+            alert('Quality check error: ' + (data.error || 'Error'));
+            rerunQualityBtn.disabled = false;
+            rerunQualityBtn.textContent = '↺ Re-run Quality Check';
+          }
+        } catch (e) {
+          window.location.reload();
+        }
+      });
+    }
+
+    // Facts Drawer toggle
+    const toggleFactsBtn = document.getElementById('toggle-edit-facts-btn');
+    const factsDrawer = document.getElementById('facts-edit-drawer');
+    const closeFactsBtn = document.getElementById('close-facts-drawer');
+    const cancelFactsBtn = document.getElementById('cancel-facts-btn');
+
+    if (toggleFactsBtn && factsDrawer) {
+      toggleFactsBtn.addEventListener('click', () => factsDrawer.classList.toggle('hidden'));
+    }
+    if (closeFactsBtn && factsDrawer) {
+      closeFactsBtn.addEventListener('click', () => factsDrawer.classList.add('hidden'));
+    }
+    if (cancelFactsBtn && factsDrawer) {
+      cancelFactsBtn.addEventListener('click', () => factsDrawer.classList.add('hidden'));
+    }
+
+    // Save Facts Form
+    const editFactsForm = document.getElementById('edit-facts-form');
+    if (editFactsForm) {
+      editFactsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(editFactsForm);
+        const title = formData.get('title');
+        const prep_time = formData.get('prep_time');
+        const cook_time = formData.get('cook_time');
+        const servings = formData.get('servings');
+        const rawIngs = (formData.get('raw_ingredients') || '').toString().split('\n').map(l => l.trim()).filter(Boolean);
+        const rawInsts = (formData.get('raw_instructions') || '').toString().split('\n').map(l => l.trim()).filter(Boolean);
+
+        const ingredients = rawIngs.map((line, idx) => ({ name: line, originalText: line, sortOrder: idx }));
+        const instructions = rawInsts.map((line, idx) => ({ stepNumber: idx + 1, instruction: line }));
+
+        try {
+          const res = await fetch('/api/editorial/update-facts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipeId,
+              title,
+              prep_time,
+              cook_time,
+              servings,
+              ingredients,
+              instructions
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('✓ Facts updated. Generated content marked STALE. Approval reset to REVIEW_REQUIRED.');
+            window.location.reload();
+          } else {
+            alert('Failed to update facts: ' + (data.error || 'Error'));
+          }
+        } catch (err) {
+          alert('Network error updating facts.');
+        }
+      });
+    }
+
+    // SEO Drawer Toggle
+    const editSeoBtn = document.getElementById('edit-seo-btn');
+    const seoDrawer = document.getElementById('seo-edit-drawer');
+    const cancelSeoBtn = document.getElementById('cancel-seo-btn');
+    if (editSeoBtn && seoDrawer) {
+      editSeoBtn.addEventListener('click', () => seoDrawer.classList.toggle('hidden'));
+    }
+    if (cancelSeoBtn && seoDrawer) {
+      cancelSeoBtn.addEventListener('click', () => seoDrawer.classList.add('hidden'));
+    }
+
+    // Save SEO Form
+    const editSeoForm = document.getElementById('edit-seo-form');
+    if (editSeoForm) {
+      editSeoForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(editSeoForm);
+        try {
+          const res = await fetch('/api/editorial/update-seo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipeId,
+              seo_title: formData.get('seo_title'),
+              meta_description: formData.get('meta_description'),
+              slug: formData.get('slug')
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('SEO metadata updated.');
+            window.location.reload();
+          } else {
+            alert('Error updating SEO: ' + data.error);
+          }
+        } catch (e) {
+          alert('Network error updating SEO.');
+        }
+      });
+    }
+
+    // Hero Image Regenerate Button
+    const regenImgBtn = document.getElementById('regen-image-btn');
+    if (regenImgBtn) {
+      regenImgBtn.addEventListener('click', async () => {
+        if (!confirm('Regenerate hero image with Runware FLUX.1 Schnell?')) return;
+        regenImgBtn.disabled = true;
+        regenImgBtn.textContent = 'Generating...';
+        try {
+          const res = await fetch('/api/editorial/regenerate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('Hero image regenerated!');
+            window.location.reload();
+          } else {
+            alert('Image generation failed: ' + data.error);
+            regenImgBtn.disabled = false;
+            regenImgBtn.textContent = '↺ Regenerate Image';
+          }
+        } catch (e) {
+          alert('Network error generating image.');
+          regenImgBtn.disabled = false;
+        }
+      });
+    }
+
+    // Section Edit / Regenerate Helpers (Global scope for onclick handlers)
+    window.toggleEditSection = function(section) {
+      const viewEl = document.getElementById(`view-${section}`);
+      const editEl = document.getElementById(`edit-${section}`);
+      if (viewEl && editEl) {
+        viewEl.classList.toggle('hidden');
+        editEl.classList.toggle('hidden');
+      }
+    };
+
+    window.saveSectionContent = async function(section, isJson = false) {
+      const editEl = document.getElementById(`edit-${section}`);
+      const textarea = editEl?.querySelector('textarea');
+      if (!textarea) return;
+      let val = textarea.value;
+      if (isJson) {
+        try { val = JSON.parse(val); } catch (e) { return alert('Invalid JSON syntax: ' + e.message); }
+      }
+
+      try {
+        const res = await fetch('/api/editorial/update-content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipeId, section, value: val })
+        });
+        const data = await res.json();
+        if (data.success) {
+          window.location.reload();
+        } else {
+          alert('Failed to save section: ' + data.error);
+        }
+      } catch (e) {
+        alert('Network error saving section.');
+      }
+    };
+
+    window.saveSectionLines = async function(section) {
+      const editEl = document.getElementById(`edit-${section}`);
+      const textarea = editEl?.querySelector('textarea');
+      if (!textarea) return;
+      const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+
+      try {
+        const res = await fetch('/api/editorial/update-content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipeId, section, value: lines })
+        });
+        const data = await res.json();
+        if (data.success) {
+          window.location.reload();
+        } else {
+          alert('Failed to save section: ' + data.error);
+        }
+      } catch (e) {
+        alert('Network error saving section.');
+      }
+    };
+
+    window.saveStorageServing = async function() {
+      const sInput = document.getElementById('edit-serving-input');
+      const stInput = document.getElementById('edit-storage-input');
+      try {
+        await fetch('/api/editorial/update-content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipeId,
+            fullContent: {
+              serving_suggestions: sInput?.value || '',
+              storage: stInput?.value || ''
+            }
+          })
+        });
+        window.location.reload();
+      } catch (e) {
+        alert('Network error saving storage/serving.');
+      }
+    };
+
+    window.regenerateSpecificSection = async function(section) {
+      if (!confirm(`Regenerate section "${section}" with DeepSeek AI? This preserves other sections.`)) return;
+      const btn = document.querySelector(`#sec-${section} .btn-regen`);
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+      }
+
+      try {
+        const res = await fetch('/api/editorial/regenerate-section', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipeId, section })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`Section "${section}" regenerated!`);
+          window.location.reload();
+        } else {
+          alert('Regeneration failed: ' + data.error);
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = '↺ Regenerate';
+          }
+        }
+      } catch (e) {
+        alert('Network error regenerating section.');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '↺ Regenerate';
+        }
+      }
+    };
+  </script>
+
+  <style>
+    .provenance-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .provenance-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .prov-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .prov-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+    .prov-val {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .prov-badge {
+      display: inline-block;
+      width: fit-content;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .badge-high { background: #dcfce7; color: #15803d; }
+    .badge-medium { background: #fef9c3; color: #a16207; }
+    .badge-low { background: #fee2e2; color: #b91c1c; }
+    .prov-source {
+      font-size: 0.8rem;
+      color: #64748b;
+      word-break: break-all;
+    }
+    .source-url-link {
+      color: #2563eb;
+      text-decoration: none;
+      margin-left: 0.35rem;
+    }
+    .source-url-link:hover {
+      text-decoration: underline;
+    }
+    .extraction-warning {
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.85rem;
+      background: #fffbeb;
+      border: 1px solid #fef08a;
+      border-radius: 6px;
+      color: #854d0e;
+      font-size: 0.85rem;
+    }
+  </style>
+</AdminLayout>

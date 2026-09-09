@@ -1,0 +1,25 @@
+﻿# Build output
+dist/
+.astro/
+
+# Dependencies
+node_modules/
+
+# Cloudflare Wrangler local state
+.wrangler/
+
+# Environment files and secrets
+.env
+.env*.local
+.dev.vars
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db

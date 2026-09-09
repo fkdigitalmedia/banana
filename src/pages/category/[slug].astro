@@ -1,0 +1,13 @@
+---
+export const prerender = false;
+
+const { slug } = Astro.params;
+const cleanSlug = (slug || '').replace(/^\/+|\/+$/g, '');
+
+if (!cleanSlug) {
+  return Astro.redirect('/recipes/', 301);
+}
+
+// Canonical category redirect to /recipes/[category]/
+return Astro.redirect(`/recipes/${cleanSlug}/`, 301);
+---

@@ -1,0 +1,1117 @@
+---
+export const prerender = false;
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { PIPELINE_STAGE_LABELS, FULL_PIPELINE_ORDER } from '../../lib/pipeline/stages';
+import { listRecentGenerationJobs } from '../../lib/db/recipes';
+
+const env = Astro.locals.runtime.env;
+const db = env?.DB;
+const recentJobs = db ? await listRecentGenerationJobs(db, 15) : [];
+---
+
+<AdminLayout title="Recipe Import & Generation" activePage="import">
+  <div class="import-container">
+    
+    <div class="header-section">
+      <div class="header-title-row">
+        <div>
+          <h2>Recipe Import & Generation</h2>
+          <p class="subtitle">Extract locked facts, generate DeepSeek editorial content, validate quality, and generate FLUX.1 Schnell hero images into draft recipes.</p>
+        </div>
+        <div class="header-history-link">
+          <a href="/admin/import/history/" class="btn-history-link">📜 Bulk Batch History ↗</a>
+        </div>
+      </div>
+
+      <!-- Mode Selector Tabs -->
+      <div class="import-tabs">
+        <button type="button" id="tab-bulk" class="tab-btn active">📋 Bulk URL Queue</button>
+        <button type="button" id="tab-single" class="tab-btn">⚡ Single Recipe Import</button>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- TAB 1: BULK IMPORT QUEUE -->
+    <!-- ========================================================= -->
+    <div id="section-bulk" class="tab-content active">
+      
+      <!-- Cost & Quality Safety Callout -->
+      <div class="callout-banner">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Cost & Quality Protection:</strong> Bulk generation uses AI content and FLUX.1 Schnell image generation. Concurrency is limited to 3 parallel jobs to ensure database stability. All imported recipes end as <strong>DRAFT_READY</strong> and must be reviewed before publishing.
+        </div>
+      </div>
+
+      <!-- Bulk Form Card -->
+      <div id="bulk-form-card" class="card form-card">
+        <form id="bulk-import-form">
+          <div class="form-group">
+            <label for="bulk-urls">Source Recipe URLs (one per line, up to 100)</label>
+            <textarea 
+              id="bulk-urls" 
+              name="urls" 
+              rows="6" 
+              class="form-control font-mono" 
+              placeholder="https://example.com/banana-bread&#10;https://example.com/chocolate-cake&#10;https://example.com/apple-pie"
+              required
+            ></textarea>
+            
+            <div class="bulk-stats-counter">
+              <span>Detected: <strong id="detected-count">0</strong></span>
+              <span>Valid: <strong id="valid-preview-count" class="text-success">0</strong></span>
+              <span>Duplicates: <strong id="duplicate-preview-count" class="text-warning">0</strong></span>
+              <span>Invalid: <strong id="invalid-preview-count" class="text-danger">0</strong></span>
+            </div>
+          </div>
+
+          <div class="bulk-form-actions">
+            <div class="concurrency-selector">
+              <label for="concurrency">Concurrency Limit:</label>
+              <select id="concurrency" name="concurrency" class="form-control-select">
+                <option value="1">1 at a time (Slowest / Safest)</option>
+                <option value="2">2 concurrent</option>
+                <option value="3" selected>3 concurrent (Recommended)</option>
+                <option value="5">5 concurrent (High speed)</option>
+              </select>
+            </div>
+
+            <button type="submit" id="btn-submit-bulk" class="btn-primary-large">
+              ➕ Add to Import Queue
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Live Bulk Batch Progress Card -->
+      <div id="bulk-progress-card" class="card progress-card hidden">
+        <div class="bulk-progress-header">
+          <div>
+            <span class="batch-label" id="batch-id-badge">Batch #—</span>
+            <h3 id="bulk-status-title">Processing Bulk Queue...</h3>
+          </div>
+          <div class="bulk-header-actions">
+            <button type="button" id="btn-retry-failed-bulk" class="btn-action-small btn-warning hidden">
+              ↺ Retry Failed
+            </button>
+            <button type="button" id="btn-cancel-bulk" class="btn-action-small btn-secondary">
+              ✕ Cancel Remaining
+            </button>
+            <a href="/admin/recipes/?status=draft" class="btn-action-small btn-primary">
+              📋 View Drafts
+            </a>
+          </div>
+        </div>
+
+        <!-- Metric Badges -->
+        <div class="bulk-metrics-grid">
+          <div class="metric-box">
+            <span class="m-val" id="metric-total">0</span>
+            <span class="m-lbl">Total URLs</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-val text-muted" id="metric-queued">0</span>
+            <span class="m-lbl">Queued</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-val text-info" id="metric-processing">0</span>
+            <span class="m-lbl">Processing</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-val text-success" id="metric-completed">0</span>
+            <span class="m-lbl">Completed</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-val text-danger" id="metric-failed">0</span>
+            <span class="m-lbl">Failed</span>
+          </div>
+        </div>
+
+        <!-- Visual Progress Bar -->
+        <div class="progress-bar-wrapper">
+          <div class="progress-bar-track">
+            <div id="bulk-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-bar-labels">
+            <span id="bulk-progress-text">Progress: 0%</span>
+            <span id="bulk-status-pill" class="status-pill status-queued">QUEUED</span>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <div class="bulk-table-container">
+          <table class="bulk-items-table">
+            <thead>
+              <tr>
+                <th style="width: 40%">Recipe Source URL</th>
+                <th style="width: 15%">Status</th>
+                <th style="width: 20%">Current Stage</th>
+                <th style="width: 15%">Generated Recipe</th>
+                <th style="width: 10%">Action</th>
+              </tr>
+            </thead>
+            <tbody id="bulk-items-tbody">
+              <tr>
+                <td colspan="5" class="text-center py-4 text-muted">Queue is initializing...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- TAB 2: SINGLE RECIPE IMPORT -->
+    <!-- ========================================================= -->
+    <div id="section-single" class="tab-content">
+      <div id="form-card" class="card form-card">
+        <form id="import-form">
+          <div class="form-group">
+            <label for="url">Source Recipe URL</label>
+            <div class="input-action-group">
+              <input 
+                type="url" 
+                id="url" 
+                name="url" 
+                placeholder="https://example.com/best-banana-bread-recipe/" 
+                class="form-control"
+              />
+              <button type="submit" id="btn-submit" class="btn-primary-large">
+                ⚡ Import & Generate
+              </button>
+            </div>
+            <span class="field-hint">Extracts authoritative recipe facts from Schema.org JSON-LD or semantic HTML, then executes the DeepSeek editorial pipeline.</span>
+          </div>
+        </form>
+      </div>
+
+      <!-- Live Pipeline Progress Card for Single Recipe -->
+      <div id="pipeline-progress-card" class="card progress-card hidden">
+        <div class="progress-header">
+          <div class="progress-title-group">
+            <div class="spinner-mini">↻</div>
+            <div>
+              <h3 id="progress-heading">Automated Recipe Pipeline in Progress...</h3>
+              <p id="progress-sub" class="progress-sub">Executing deterministic extraction and DeepSeek editorial generation.</p>
+            </div>
+          </div>
+          <span id="current-stage-badge" class="stage-badge-running">Starting...</span>
+        </div>
+
+        <!-- Live Stage Checklist -->
+        <div class="stages-grid">
+          <div class="stage-column">
+            <h4 class="stage-group-title">📥 1. Ingestion & Extraction</h4>
+            <ul class="stage-list">
+              <li data-stage="VALIDATE_URL" class="stage-item"><span class="stage-icon">⏳</span> 1. Validate URL & Security</li>
+              <li data-stage="FETCH_SOURCE" class="stage-item"><span class="stage-icon">⏳</span> 2. Fetch Source Web Page</li>
+              <li data-stage="EXTRACT_RECIPE" class="stage-item"><span class="stage-icon">⏳</span> 3. Extract Recipe JSON-LD & HTML</li>
+              <li data-stage="NORMALIZE" class="stage-item"><span class="stage-icon">⏳</span> 4. Normalize Ingredients & Times</li>
+              <li data-stage="VALIDATE_RECIPE" class="stage-item"><span class="stage-icon">⏳</span> 5. Validate Source Recipe Facts</li>
+              <li data-stage="CREATE_FACT_SHEET" class="stage-item"><span class="stage-icon">⏳</span> 6. Create Locked Fact Sheet</li>
+              <li data-stage="CREATE_RECIPE_RECORD" class="stage-item"><span class="stage-icon">⏳</span> 7. Save Recipe Record in D1</li>
+            </ul>
+          </div>
+
+          <div class="stage-column">
+            <h4 class="stage-group-title">🤖 2. DeepSeek Editorial AI</h4>
+            <ul class="stage-list">
+              <li data-stage="ANALYZE" class="stage-item"><span class="stage-icon">⏳</span> 8. Editorial Positioning Analysis</li>
+              <li data-stage="GENERATE_INTRO" class="stage-item"><span class="stage-icon">⏳</span> 9. Introduction & Sensory Hook</li>
+              <li data-stage="GENERATE_INGREDIENT_GUIDANCE" class="stage-item"><span class="stage-icon">⏳</span> 10. Ingredient Science Guidance</li>
+              <li data-stage="GENERATE_COOKING_GUIDANCE" class="stage-item"><span class="stage-icon">⏳</span> 11. Cooking Technique Guidance</li>
+              <li data-stage="GENERATE_TIPS" class="stage-item"><span class="stage-icon">⏳</span> 12. Practical Pro Baking Tips</li>
+              <li data-stage="GENERATE_VARIATIONS" class="stage-item"><span class="stage-icon">⏳</span> 13. Mix-in & Flavor Variations</li>
+              <li data-stage="GENERATE_SERVING" class="stage-item"><span class="stage-icon">⏳</span> 14. Serving Suggestions & Pairings</li>
+              <li data-stage="GENERATE_STORAGE" class="stage-item"><span class="stage-icon">⏳</span> 15. Storage & Reheating Guidance</li>
+              <li data-stage="GENERATE_FAQ" class="stage-item"><span class="stage-icon">⏳</span> 16. Recipe-Specific Reader FAQ</li>
+              <li data-stage="GENERATE_SEO" class="stage-item"><span class="stage-icon">⏳</span> 17. SEO Title, Description & Slug</li>
+              <li data-stage="ASSEMBLE" class="stage-item"><span class="stage-icon">⏳</span> 18. Full Markdown Assembly</li>
+            </ul>
+          </div>
+
+          <div class="stage-column">
+            <h4 class="stage-group-title">🛡️ 3. Validation & QA Gate</h4>
+            <ul class="stage-list">
+              <li data-stage="VALIDATE_CONTENT" class="stage-item"><span class="stage-icon">⏳</span> 19. Factual & Quality Validation</li>
+              <li data-stage="IMAGE_PROCESSING" class="stage-item"><span class="stage-icon">⏳</span> 20. Image Metadata Verification</li>
+              <li data-stage="FINAL_QA" class="stage-item"><span class="stage-icon">⏳</span> 21. Final Quality Gate</li>
+              <li data-stage="DRAFT_READY" class="stage-item"><span class="stage-icon">⏳</span> 22. Ready as Validated Draft</li>
+            </ul>
+          </div>
+        </div>
+
+        <div id="pipeline-error-box" class="pipeline-error-box hidden">
+          <h4>⚠️ Pipeline Interrupted</h4>
+          <p id="pipeline-error-msg"></p>
+          <div class="error-actions">
+            <button type="button" id="btn-retry-pipeline" class="btn-warning">↻ Retry Failed Stage</button>
+            <button type="button" onclick="resetForm()" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+
+        <div id="completion-box" class="completion-box hidden">
+          <h4>🎉 Recipe Processed Successfully!</h4>
+          <p>The recipe fact sheet has been extracted and locked, and the editorial draft is ready for review.</p>
+          <div class="completion-actions">
+            <a id="btn-review-draft" href="#" class="btn-primary">Review & Edit Draft Recipe →</a>
+            <button type="button" onclick="resetForm()" class="btn-secondary">Import Another Recipe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- PERSISTENT RECENT QUEUE & IMPORT HISTORY TABLE -->
+    <!-- ========================================================= -->
+    <div class="card recent-queue-card" style="margin-top: 2rem;">
+      <div class="queue-card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <div>
+          <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem;">🕒 Live Queue & Recent Imports ({recentJobs.length})</h3>
+          <p class="subtitle-small" style="margin: 0; font-size: 0.9rem; color: var(--color-text-secondary, #6B4226);">
+            Track background extraction, view recipe drafts, and monitor pipeline progress.
+          </p>
+        </div>
+        <div>
+          <button type="button" class="btn-action-small btn-secondary" onclick="window.location.reload()">↻ Refresh Queue</button>
+        </div>
+      </div>
+
+      <div class="bulk-table-container">
+        <table class="bulk-items-table">
+          <thead>
+            <tr>
+              <th style="width: 8%">Job ID</th>
+              <th style="width: 38%">Source Recipe URL</th>
+              <th style="width: 14%">Status</th>
+              <th style="width: 18%">Current Stage</th>
+              <th style="width: 22%">Recipe Draft</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentJobs.length === 0 ? (
+              <tr>
+                <td colspan="5" class="text-center py-4 text-muted" style="text-align: center; padding: 2rem; color: #888;">
+                  No recipe import jobs yet. Use the form above to import your first recipe!
+                </td>
+              </tr>
+            ) : (
+              recentJobs.map((job: any) => {
+                const statusClass = (job.status || 'pending').toLowerCase().replace(/_/g, '-');
+                const cleanUrl = job.source_url || '';
+                const displayUrl = cleanUrl.replace(/^https?:\/\//, '');
+
+                return (
+                  <tr>
+                    <td><strong>#{job.id}</strong></td>
+                    <td>
+                      <a href={cleanUrl} target="_blank" rel="noopener" class="url-cell" title={cleanUrl}>
+                        {displayUrl.length > 45 ? displayUrl.substring(0, 45) + '...' : displayUrl}
+                      </a>
+                    </td>
+                    <td>
+                      <span class={`status-pill status-${statusClass}`}>
+                        {job.status === 'COMPLETED' ? 'DRAFT READY' : job.status}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="stage-name">{job.current_stage || '—'}</span>
+                      {job.error_message && (
+                        <div class="table-error-msg" title={job.error_message} style="color: var(--color-error, #C0392B); font-size: 0.8rem; margin-top: 0.25rem;">
+                          ⚠️ {job.error_message}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {job.recipe_id ? (
+                        <a href={`/admin/recipes/${job.recipe_id}/`} class="recipe-cell-link" style="color: var(--color-primary, #8B4513); font-weight: 600; text-decoration: none;">
+                          📝 {job.recipe_title || `Recipe #${job.recipe_id}`} ↗
+                        </a>
+                      ) : (
+                        <span class="text-muted" style="color: #999;">Generating...</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</AdminLayout>
+
+<script>
+  // Tab Switching
+  const tabBulk = document.getElementById('tab-bulk');
+  const tabSingle = document.getElementById('tab-single');
+  const sectionBulk = document.getElementById('section-bulk');
+  const sectionSingle = document.getElementById('section-single');
+
+  tabBulk?.addEventListener('click', () => {
+    tabBulk.classList.add('active');
+    tabSingle?.classList.remove('active');
+    sectionBulk?.classList.add('active');
+    sectionSingle?.classList.remove('active');
+  });
+
+  tabSingle?.addEventListener('click', () => {
+    tabSingle.classList.add('active');
+    tabBulk?.classList.remove('active');
+    sectionSingle?.classList.add('active');
+    sectionBulk?.classList.remove('active');
+  });
+
+  // Support ?tab=single or ?jobId from URL
+  const initialParams = new URLSearchParams(window.location.search);
+  if (initialParams.get('tab') === 'single' || initialParams.get('jobId')) {
+    tabSingle?.click();
+  }
+
+  // =========================================================
+  // BULK IMPORT LOGIC
+  // =========================================================
+  const bulkTextarea = document.getElementById('bulk-urls') as HTMLTextAreaElement;
+  const detectedCount = document.getElementById('detected-count');
+  const validPreviewCount = document.getElementById('valid-preview-count');
+  const duplicatePreviewCount = document.getElementById('duplicate-preview-count');
+  const invalidPreviewCount = document.getElementById('invalid-preview-count');
+  const bulkForm = document.getElementById('bulk-import-form') as HTMLFormElement;
+  const btnSubmitBulk = document.getElementById('btn-submit-bulk') as HTMLButtonElement;
+
+  const bulkProgressCard = document.getElementById('bulk-progress-card');
+  const bulkFormCard = document.getElementById('bulk-form-card');
+  const batchIdBadge = document.getElementById('batch-id-badge');
+  const bulkStatusTitle = document.getElementById('bulk-status-title');
+  const bulkStatusPill = document.getElementById('bulk-status-pill');
+  const bulkProgressFill = document.getElementById('bulk-progress-fill');
+  const bulkProgressText = document.getElementById('bulk-progress-text');
+  const bulkItemsTbody = document.getElementById('bulk-items-tbody');
+
+  const metricTotal = document.getElementById('metric-total');
+  const metricQueued = document.getElementById('metric-queued');
+  const metricProcessing = document.getElementById('metric-processing');
+  const metricCompleted = document.getElementById('metric-completed');
+  const metricFailed = document.getElementById('metric-failed');
+  const btnRetryFailedBulk = document.getElementById('btn-retry-failed-bulk');
+  const btnCancelBulk = document.getElementById('btn-cancel-bulk');
+
+  let activeBulkJobId: number | null = null;
+  let bulkPollInterval: any = null;
+
+  // Real-time URL counter on input
+  bulkTextarea?.addEventListener('input', () => {
+    const text = bulkTextarea.value || '';
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    let dupes = 0;
+    let valids = 0;
+    let invalids = 0;
+
+    lines.forEach(line => {
+      try {
+        let testLine = line.trim();
+        if (!testLine) return;
+        if (!testLine.startsWith('http://') && !testLine.startsWith('https://')) {
+          testLine = 'https://' + testLine;
+        }
+        const u = new URL(testLine);
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          const norm = testLine.toLowerCase().replace(/\/+$/, '');
+          if (seen.has(norm)) {
+            dupes++;
+          } else {
+            seen.add(norm);
+            valids++;
+          }
+        } else {
+          invalids++;
+        }
+      } catch {
+        invalids++;
+      }
+    });
+
+    if (detectedCount) detectedCount.textContent = String(lines.length);
+    if (validPreviewCount) validPreviewCount.textContent = String(valids);
+    if (duplicatePreviewCount) duplicatePreviewCount.textContent = String(dupes);
+    if (invalidPreviewCount) invalidPreviewCount.textContent = String(invalids);
+  });
+
+  // Submit Bulk Queue
+  bulkForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = bulkTextarea.value || '';
+    const urls = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    if (urls.length === 0) {
+      alert('Please enter at least one recipe URL.');
+      return;
+    }
+
+    if (urls.length > 100) {
+      alert('Maximum 100 URLs permitted per bulk submission.');
+      return;
+    }
+
+    const concurrency = (document.getElementById('concurrency') as HTMLSelectElement)?.value || '3';
+
+    btnSubmitBulk.disabled = true;
+    btnSubmitBulk.textContent = '⏳ Creating Queue...';
+
+    try {
+      const res = await fetch('/api/bulk/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, concurrency })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Failed to create bulk queue.');
+        btnSubmitBulk.disabled = false;
+        btnSubmitBulk.textContent = '➕ Add to Import Queue';
+        return;
+      }
+
+      activeBulkJobId = data.bulkJobId;
+      startBulkMonitor(activeBulkJobId);
+    } catch (err: any) {
+      alert(err.message || 'Network error.');
+      btnSubmitBulk.disabled = false;
+      btnSubmitBulk.textContent = '➕ Add to Import Queue';
+    }
+  });
+
+  function startBulkMonitor(bulkJobId: number) {
+    bulkProgressCard?.classList.remove('hidden');
+    if (batchIdBadge) batchIdBadge.textContent = `Batch #${bulkJobId}`;
+
+    if (bulkPollInterval) clearInterval(bulkPollInterval);
+    pollBulkStatus(bulkJobId);
+    bulkPollInterval = setInterval(() => pollBulkStatus(bulkJobId), 2500);
+  }
+
+  async function pollBulkStatus(bulkJobId: number) {
+    try {
+      const res = await fetch(`/api/bulk/status?bulkJobId=${bulkJobId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success || !data.job) return;
+
+      const job = data.job;
+      const items = data.items || [];
+      const pct = data.progressPercent || 0;
+
+      // Update counters
+      if (metricTotal) metricTotal.textContent = String(job.total_count);
+      if (metricQueued) metricQueued.textContent = String(job.queued_count);
+      if (metricProcessing) metricProcessing.textContent = String(job.processing_count);
+      if (metricCompleted) metricCompleted.textContent = String(job.completed_count);
+      if (metricFailed) metricFailed.textContent = String(job.failed_count);
+
+      // Progress bar
+      if (bulkProgressFill) bulkProgressFill.style.width = `${pct}%`;
+      if (bulkProgressText) bulkProgressText.textContent = `Progress: ${pct}% (${job.completed_count + job.failed_count}/${job.total_count} processed)`;
+
+      // Status pill & title
+      if (bulkStatusPill) {
+        bulkStatusPill.className = `status-pill status-${job.status.toLowerCase().replace(/_/g, '-')}`;
+        bulkStatusPill.textContent = job.status.replace(/_/g, ' ');
+      }
+      if (bulkStatusTitle) {
+        if (job.status === 'PROCESSING' || job.status === 'QUEUED') {
+          bulkStatusTitle.textContent = `Processing Batch #${job.id} (${job.processing_count} active)...`;
+        } else if (job.status === 'COMPLETED') {
+          bulkStatusTitle.textContent = `🎉 Batch #${job.id} Completed!`;
+        } else if (job.status === 'COMPLETED_WITH_ERRORS') {
+          bulkStatusTitle.textContent = `⚠️ Batch #${job.id} Completed with Errors`;
+        } else if (job.status === 'CANCELLED') {
+          bulkStatusTitle.textContent = `✕ Batch #${job.id} Cancelled`;
+        }
+      }
+
+      // Retry failed button visibility
+      if (btnRetryFailedBulk) {
+        if (job.failed_count > 0) {
+          btnRetryFailedBulk.classList.remove('hidden');
+        } else {
+          btnRetryFailedBulk.classList.add('hidden');
+        }
+      }
+
+      // Render table rows
+      renderBulkItemsTable(items);
+
+      if (data.isFinished) {
+        clearInterval(bulkPollInterval);
+      }
+    } catch (err) {
+      console.error('Error polling bulk status:', err);
+    }
+  }
+
+  function renderBulkItemsTable(items: any[]) {
+    if (!bulkItemsTbody) return;
+    if (items.length === 0) {
+      bulkItemsTbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-muted">No items in queue.</td></tr>`;
+      return;
+    }
+
+    bulkItemsTbody.innerHTML = items.map((item: any) => {
+      const statusClass = (item.status || 'queued').toLowerCase().replace(/_/g, '-');
+      const cleanUrl = item.source_url;
+      const displayUrl = cleanUrl.replace(/^https?:\/\//, '');
+
+      return `
+        <tr>
+          <td>
+            <a href="${cleanUrl}" target="_blank" rel="noopener" class="url-cell" title="${cleanUrl}">
+              ${displayUrl}
+            </a>
+          </td>
+          <td>
+            <span class="status-pill status-${statusClass}">${item.status}</span>
+          </td>
+          <td>
+            <span class="stage-name">${item.current_stage || '—'}</span>
+            ${item.error_message ? `<div class="table-error-msg" title="${item.error_message}">⚠️ ${item.error_message}</div>` : ''}
+          </td>
+          <td>
+            ${item.recipe_id ? `
+              <a href="/admin/recipes/${item.recipe_id}/" class="recipe-cell-link">
+                ${item.recipe_title || 'Recipe #' + item.recipe_id} ↗
+              </a>
+            ` : `<span class="text-muted">—</span>`}
+          </td>
+          <td>
+            ${item.recipe_id ? `
+              <a href="/admin/recipes/${item.recipe_id}/" class="btn-action-cell btn-view">View</a>
+            ` : (item.status === 'FAILED' ? `
+              <button type="button" class="btn-action-cell btn-retry" onclick="retrySingleBulkItem(${item.id})">Retry</button>
+            ` : `<span class="text-muted">—</span>`)}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Cancel Bulk Queue
+  btnCancelBulk?.addEventListener('click', async () => {
+    if (!activeBulkJobId) return;
+    if (!confirm('Cancel remaining queued recipes? Active running jobs will complete safely.')) return;
+
+    try {
+      const res = await fetch('/api/bulk/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulkJobId: activeBulkJobId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        pollBulkStatus(activeBulkJobId);
+      }
+    } catch (e: any) {
+      alert(e.message);
+    }
+  });
+
+  // Retry All Failed in Bulk
+  btnRetryFailedBulk?.addEventListener('click', async () => {
+    if (!activeBulkJobId) return;
+    try {
+      const res = await fetch('/api/bulk/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulkJobId: activeBulkJobId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (bulkPollInterval) clearInterval(bulkPollInterval);
+        bulkPollInterval = setInterval(() => pollBulkStatus(activeBulkJobId!), 2500);
+        pollBulkStatus(activeBulkJobId);
+      }
+    } catch (e: any) {
+      alert(e.message);
+    }
+  });
+
+  // Global Retry single item helper
+  (window as any).retrySingleBulkItem = async (itemId: number) => {
+    if (!activeBulkJobId) return;
+    try {
+      const res = await fetch('/api/bulk/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulkJobId: activeBulkJobId, itemId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (bulkPollInterval) clearInterval(bulkPollInterval);
+        bulkPollInterval = setInterval(() => pollBulkStatus(activeBulkJobId!), 2500);
+        pollBulkStatus(activeBulkJobId);
+      }
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  // URL Query param checks (e.g. ?bulkJobId=X or ?retryJobId=X)
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramBulkJobId = urlParams.get('bulkJobId');
+  if (paramBulkJobId) {
+    activeBulkJobId = parseInt(paramBulkJobId, 10);
+    startBulkMonitor(activeBulkJobId);
+  }
+
+  // =========================================================
+  // SINGLE RECIPE IMPORT LOGIC
+  // =========================================================
+  const form = document.getElementById('import-form') as HTMLFormElement;
+  const singleProgressCard = document.getElementById('pipeline-progress-card');
+  const errorBox = document.getElementById('pipeline-error-box');
+  const errorMsg = document.getElementById('pipeline-error-msg');
+  const completionBox = document.getElementById('completion-box');
+  const btnReview = document.getElementById('btn-review-draft') as HTMLAnchorElement;
+  const btnRetry = document.getElementById('btn-retry-pipeline');
+  const btnSubmit = document.getElementById('btn-submit') as HTMLButtonElement;
+  const currentStageBadge = document.getElementById('current-stage-badge');
+
+  let activeSingleJobId: number | null = null;
+  let singlePollTimer: any = null;
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('url') as HTMLInputElement;
+    const recipeUrl = input.value.trim();
+    if (!recipeUrl) return;
+
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Starting Pipeline...';
+    errorBox?.classList.add('hidden');
+    completionBox?.classList.add('hidden');
+    singleProgressCard?.classList.remove('hidden');
+
+    let normalizedRecipeUrl = recipeUrl;
+    if (!normalizedRecipeUrl.startsWith('http://') && !normalizedRecipeUrl.startsWith('https://')) {
+      normalizedRecipeUrl = 'https://' + normalizedRecipeUrl;
+    }
+
+    try {
+      const res = await fetch('/api/pipeline/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: normalizedRecipeUrl, sourceUrl: normalizedRecipeUrl })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showSingleError(data.error || 'Failed to start pipeline.', data.existingRecipeId);
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = '⚡ Import & Generate';
+        return;
+      }
+
+      const initialRecipeId = data.recipe_id || data.recipeId;
+      const isAlreadyDone = data.status === 'COMPLETED' || data.status === 'DRAFT_READY' || data.isCompleted;
+
+      if (isAlreadyDone) {
+        currentStageBadge!.textContent = 'COMPLETED';
+        currentStageBadge!.className = 'stage-badge-completed';
+        completionBox?.classList.remove('hidden');
+        if (btnReview && initialRecipeId) {
+          btnReview.href = `/admin/recipes/${initialRecipeId}/`;
+        }
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = '⚡ Import & Generate';
+        return;
+      }
+
+      activeSingleJobId = data.jobId;
+      startSinglePoll(activeSingleJobId!);
+    } catch (err: any) {
+      showSingleError(err.message || 'Network request failed.');
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = '⚡ Import & Generate';
+    }
+  });
+
+  function startSinglePoll(jobId: number) {
+    if (singlePollTimer) clearInterval(singlePollTimer);
+    singlePollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/pipeline/status?jobId=${jobId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const curStage = data.current_stage || data.currentStage;
+        if (curStage && currentStageBadge) {
+          currentStageBadge.textContent = curStage;
+        }
+
+        // Highlight completed stages
+        const stageListItems = document.querySelectorAll('.stage-item');
+        let reachedCurrent = false;
+
+        stageListItems.forEach((li) => {
+          const stageName = li.getAttribute('data-stage');
+          const icon = li.querySelector('.stage-icon');
+
+          if (stageName === curStage) {
+            li.classList.add('active');
+            if (icon) icon.textContent = '↻';
+            reachedCurrent = true;
+          } else if (!reachedCurrent) {
+            li.classList.add('completed');
+            if (icon) icon.textContent = '✓';
+          }
+        });
+
+        const isFinished = data.status === 'COMPLETED' || data.status === 'DRAFT_READY' || data.isCompleted;
+        const isFailed = data.status === 'FAILED';
+        const recipeId = data.recipe_id || data.recipeId;
+
+        if (recipeId && btnReview) {
+          btnReview.href = `/admin/recipes/${recipeId}/`;
+        }
+
+        if (isFinished) {
+          clearInterval(singlePollTimer);
+          currentStageBadge!.textContent = 'COMPLETED';
+          currentStageBadge!.className = 'stage-badge-completed';
+          completionBox?.classList.remove('hidden');
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = '⚡ Import & Generate';
+        } else if (isFailed) {
+          clearInterval(singlePollTimer);
+          showSingleError(data.error_message || data.errorMessage || 'Pipeline stage failed.');
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = '⚡ Import & Generate';
+        }
+      } catch (e) {
+        console.error('Error polling status:', e);
+      }
+    }, 2000);
+  }
+
+  function showSingleError(msg: string, existingRecipeId?: number) {
+    if (errorBox && errorMsg) {
+      if (existingRecipeId) {
+        errorMsg.innerHTML = `${msg} <a href="/admin/recipes/${existingRecipeId}/" style="color: #2563eb; text-decoration: underline; font-weight: 600; margin-left: 0.5rem;">Edit Recipe #${existingRecipeId} →</a>`;
+      } else {
+        errorMsg.textContent = msg;
+      }
+      errorBox.classList.remove('hidden');
+    }
+    if (currentStageBadge) {
+      currentStageBadge.textContent = 'FAILED';
+      currentStageBadge.className = 'stage-badge-failed';
+    }
+  }
+
+  (window as any).resetForm = () => {
+    singleProgressCard?.classList.add('hidden');
+    errorBox?.classList.add('hidden');
+    completionBox?.classList.add('hidden');
+    btnSubmit.disabled = false;
+    btnSubmit.textContent = '⚡ Import & Generate';
+  };
+</script>
+
+<style>
+  .import-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding-bottom: 4rem;
+  }
+  
+  .header-section { margin-bottom: 2rem; }
+  .header-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+  .header-section h2 { margin: 0 0 0.5rem 0; color: #18181b; }
+  .subtitle { color: #71717a; margin: 0; font-size: 0.95rem; max-width: 750px; line-height: 1.5; }
+  
+  .btn-history-link {
+    display: inline-block;
+    background: #f4f4f5;
+    color: #18181b;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid #e4e4e7;
+    white-space: nowrap;
+  }
+  .btn-history-link:hover { background: #e4e4e7; }
+
+  .import-tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid #e4e4e7;
+    margin-top: 1rem;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #71717a;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: #18181b; }
+  .tab-btn.active {
+    color: #8b4513;
+    border-bottom-color: #8b4513;
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .callout-banner {
+    background: #fff8f0;
+    border: 1px solid #fde8d3;
+    border-left: 4px solid #d2691e;
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    color: #6b4226;
+    line-height: 1.5;
+  }
+  .callout-icon { font-size: 1.2rem; }
+
+  .card {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 1.75rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    margin-bottom: 2rem;
+  }
+
+  .font-mono { font-family: monospace; font-size: 0.85rem; line-height: 1.5; }
+
+  .bulk-stats-counter {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.6rem;
+    font-size: 0.8rem;
+    color: #71717a;
+    background: #fafafa;
+    padding: 0.5rem 0.85rem;
+    border-radius: 4px;
+    border: 1px solid #f4f4f5;
+  }
+
+  .bulk-form-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.25rem;
+  }
+
+  .concurrency-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: #52525b;
+  }
+  .form-control-select {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+
+  .btn-primary-large {
+    background: #8b4513;
+    color: white;
+    padding: 0.75rem 1.75rem;
+    border-radius: 6px;
+    border: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-primary-large:hover { background: #6f370f; }
+  .btn-primary-large:disabled { background: #d4d4d8; cursor: not-allowed; }
+
+  /* Bulk Progress */
+  .bulk-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f4f4f5;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .batch-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #8b4513;
+    background: #fde8d3;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+  }
+  .bulk-progress-header h3 { margin: 0.4rem 0 0 0; color: #18181b; }
+  .bulk-header-actions { display: flex; gap: 0.5rem; }
+
+  .btn-action-small {
+    padding: 0.4rem 0.85rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .btn-action-small.btn-primary { background: #8b4513; color: white; }
+  .btn-action-small.btn-warning { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .btn-action-small.btn-secondary { background: #f4f4f5; color: #3f3f46; border-color: #e4e4e7; }
+
+  .bulk-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .metric-box {
+    background: #fafafa;
+    border: 1px solid #f4f4f5;
+    border-radius: 6px;
+    padding: 0.85rem;
+    text-align: center;
+  }
+  .m-val { display: block; font-size: 1.5rem; font-weight: 700; color: #18181b; }
+  .m-lbl { font-size: 0.75rem; text-transform: uppercase; color: #71717a; font-weight: 600; }
+
+  .progress-bar-wrapper { margin-bottom: 2rem; }
+  .progress-bar-track {
+    width: 100%;
+    height: 12px;
+    background: #e4e4e7;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: #16a34a;
+    transition: width 0.3s ease;
+  }
+  .progress-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #52525b;
+  }
+
+  .status-pill {
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .status-queued { background: #f1f5f9; color: #475569; }
+  .status-processing { background: #e0f2fe; color: #0369a1; }
+  .status-completed { background: #dcfce7; color: #15803d; }
+  .status-completed-with-errors { background: #fef3c7; color: #b45309; }
+  .status-failed { background: #fee2e2; color: #b91c1c; }
+  .status-cancelled { background: #f3f4f6; color: #6b7280; }
+
+  /* Bulk Items Table */
+  .bulk-table-container { overflow-x: auto; }
+  .bulk-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .bulk-items-table th {
+    background: #f8fafc;
+    padding: 0.75rem 0.85rem;
+    font-weight: 600;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+  }
+  .bulk-items-table td {
+    padding: 0.75rem 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+    vertical-align: middle;
+  }
+  .url-cell {
+    display: block;
+    max-width: 320px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-decoration: none;
+    color: #2563eb;
+  }
+  .stage-name { font-weight: 600; font-size: 0.8rem; color: #475569; }
+  .table-error-msg { font-size: 0.7rem; color: #dc2626; margin-top: 0.2rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recipe-cell-link { color: #0284c7; font-weight: 600; text-decoration: none; }
+  .btn-action-cell {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-action-cell.btn-view { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; display: inline-block; }
+  .btn-action-cell.btn-retry { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+  .text-success { color: #16a34a !important; }
+  .text-warning { color: #d97706 !important; }
+  .text-danger { color: #dc2626 !important; }
+  .text-info { color: #0284c7 !important; }
+  .text-muted { color: #a1a1aa !important; }
+  .hidden { display: none !important; }
+
+  /* Single Import Styles */
+  .input-action-group { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
+  .field-hint { display: block; font-size: 0.8rem; color: #71717a; margin-top: 0.5rem; }
+  .stages-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 1.5rem; }
+  .stage-group-title { font-size: 0.85rem; color: #71717a; text-transform: uppercase; margin: 0 0 0.75rem 0; }
+  .stage-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .stage-item { font-size: 0.8rem; color: #71717a; display: flex; align-items: center; gap: 0.4rem; }
+  .stage-item.active { color: #0284c7; font-weight: 600; }
+  .stage-item.completed { color: #16a34a; font-weight: 600; }
+  .stage-badge-running { background: #e0f2fe; color: #0369a1; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+  .stage-badge-completed { background: #dcfce7; color: #15803d; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+  .stage-badge-failed { background: #fee2e2; color: #b91c1c; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+  
+  .pipeline-error-box { background: #fef2f2; border: 1px solid #fecaca; padding: 1.25rem; border-radius: 6px; margin-top: 1.5rem; }
+  .pipeline-error-box h4 { margin: 0 0 0.5rem 0; color: #991b1b; }
+  .pipeline-error-box p { margin: 0 0 1rem 0; font-size: 0.875rem; color: #7f1d1d; }
+  .completion-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 1.5rem; border-radius: 6px; margin-top: 1.5rem; text-align: center; }
+  .completion-box h4 { margin: 0 0 0.5rem 0; color: #166534; }
+  .completion-box p { margin: 0 0 1.25rem 0; font-size: 0.875rem; color: #15803d; }
+  .completion-actions { display: flex; gap: 1rem; justify-content: center; }
+
+  @media (max-width: 768px) {
+    .bulk-metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .stages-grid { grid-template-columns: 1fr; }
+    .header-title-row { flex-direction: column; gap: 1rem; }
+  }
+</style>

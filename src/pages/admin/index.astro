@@ -1,0 +1,461 @@
+---
+export const prerender = false;
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getDashboardStats, getDashboardAttentionItems } from '../../lib/db/recipes';
+import { getEditorialWorkflowStats } from '../../lib/editorial/workflow';
+
+const env = Astro.locals.runtime.env;
+const db = env.DB;
+
+const stats = await getDashboardStats(db);
+const workflowStats = await getEditorialWorkflowStats(db);
+const { failedJobs, processingJobs, draftsAwaitingReview, recentlyPublished, recentImports } = await getDashboardAttentionItems(db);
+---
+
+<AdminLayout title="Dashboard" activePage="dashboard">
+  <div class="dashboard-header">
+    <div>
+      <h2>Recipe Publishing Operations</h2>
+      <p class="subtitle">Real-time overview of recipe imports, editorial review, and live publication.</p>
+    </div>
+    <div class="quick-actions">
+      <a href="/admin/import/" class="btn-primary">+ Import Recipe</a>
+      <a href="/admin/review/?status=review_required" class="btn-review-q">Review Queue ({workflowStats.needsReview})</a>
+    </div>
+  </div>
+
+  <!-- Real D1 Statistics Grid -->
+  <div class="stats-grid">
+    <a href="/admin/review/?status=review_required" class="stat-card clickable-stat">
+      <h3>Needs Review</h3>
+      <div class="stat-value text-warning">{workflowStats.needsReview}</div>
+      <div class="stat-sub">Pending editorial approval</div>
+    </a>
+    <a href="/admin/review/?status=approved" class="stat-card clickable-stat">
+      <h3>Approved</h3>
+      <div class="stat-value text-info">{workflowStats.approved}</div>
+      <div class="stat-sub">Ready to publish</div>
+    </a>
+    <a href="/admin/recipes/?status=published" class="stat-card clickable-stat">
+      <h3>Published</h3>
+      <div class="stat-value text-success">{workflowStats.published}</div>
+      <div class="stat-sub">Live on website</div>
+    </a>
+    <a href="/admin/review/?status=failed" class="stat-card clickable-stat">
+      <h3>Failed / Blocked</h3>
+      <div class={`stat-value ${workflowStats.failed > 0 ? 'text-danger' : ''}`}>{workflowStats.failed}</div>
+      <div class="stat-sub">Requires attention</div>
+    </a>
+    <a href="/admin/recipes/" class="stat-card clickable-stat">
+      <h3>Total Recipes</h3>
+      <div class="stat-value">{stats.total}</div>
+      <div class="stat-sub">All database records</div>
+    </a>
+  </div>
+
+  <!-- Attention Sections (Action-Oriented) -->
+  <div class="dashboard-sections">
+    
+    <!-- 1. Failed Jobs Requiring Attention (if any) -->
+    {failedJobs.length > 0 && (
+      <div class="attention-card border-danger">
+        <div class="attention-header">
+          <span class="badge-alert">⚠️ Action Required</span>
+          <h3>Failed Generation Jobs ({failedJobs.length})</h3>
+        </div>
+        <div class="table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Recipe / URL</th>
+                <th>Failed Stage</th>
+                <th>Error Message</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {failedJobs.map(job => (
+                <tr>
+                  <td><strong>{job.recipe_title || job.source_url}</strong></td>
+                  <td><span class="stage-tag stage-failed">{job.current_stage || 'GENERATE'}</span></td>
+                  <td class="error-text">{job.error_message || 'API error during generation'}</td>
+                  <td>
+                    {job.recipe_id ? (
+                      <a href={`/admin/recipes/${job.recipe_id}`} class="btn-action-small">Inspect & Retry →</a>
+                    ) : (
+                      <span class="text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+
+    <!-- 2. Processing Jobs (if any) -->
+    {processingJobs.length > 0 && (
+      <div class="attention-card border-info">
+        <div class="attention-header">
+          <span class="badge-info">↻ In Progress</span>
+          <h3>Active Generation Jobs ({processingJobs.length})</h3>
+        </div>
+        <div class="table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Recipe</th>
+                <th>Current Stage</th>
+                <th>Started</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {processingJobs.map(job => (
+                <tr>
+                  <td><strong>{job.recipe_title || job.source_url}</strong></td>
+                  <td><span class="stage-tag stage-running">↻ {job.current_stage}</span></td>
+                  <td>{new Date(job.updated_at).toLocaleTimeString()}</td>
+                  <td>
+                    {job.recipe_id && <a href={`/admin/recipes/${job.recipe_id}`} class="action-link">View Progress →</a>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+
+    <!-- 3. Drafts Awaiting Editorial Review -->
+    <div class="attention-card">
+      <div class="attention-header">
+        <h3>📝 Drafts Awaiting Review ({stats.drafts})</h3>
+        <a href="/admin/recipes/?status=draft" class="view-all-link">View All Drafts →</a>
+      </div>
+      {draftsAwaitingReview.length === 0 ? (
+        <div class="empty-panel">No drafts currently waiting for review. All caught up! 🎉</div>
+      ) : (
+        <div class="table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Recipe Title</th>
+                <th>Category</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {draftsAwaitingReview.map(recipe => (
+                <tr>
+                  <td><strong>{recipe.title}</strong></td>
+                  <td>{recipe.category_name || '—'}</td>
+                  <td>{new Date(recipe.updated_at).toLocaleDateString()}</td>
+                  <td class="actions-cell">
+                    <a href={`/admin/recipes/${recipe.id}`} class="btn-action-small">Review & Publish →</a>
+                    <a href={`/${recipe.slug}/?preview=true`} target="_blank" class="action-link text-muted">Preview ↗</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- 4. Recent Imports (Ready for AI Generation) -->
+    <div class="attention-card">
+      <div class="attention-header">
+        <h3>📥 Recent Imports — Ready for Generation ({stats.imported})</h3>
+        <a href="/admin/recipes/?status=imported" class="view-all-link">View All Imports →</a>
+      </div>
+      {recentImports.length === 0 ? (
+        <div class="empty-panel">No imported recipes pending generation. <a href="/admin/import/">Import a new URL →</a></div>
+      ) : (
+        <div class="table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Recipe Title</th>
+                <th>Source</th>
+                <th>Imported Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentImports.map(recipe => (
+                <tr>
+                  <td><strong>{recipe.title}</strong></td>
+                  <td><span class="source-tag">{recipe.source_domain || 'Web Import'}</span></td>
+                  <td>{new Date(recipe.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <a href={`/admin/recipes/${recipe.id}`} class="btn-action-primary">✨ Generate Article →</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- 5. Recently Published Recipes -->
+    <div class="attention-card">
+      <div class="attention-header">
+        <h3>🌐 Recently Published ({stats.published})</h3>
+        <a href="/admin/recipes/?status=published" class="view-all-link">View All Published →</a>
+      </div>
+      {recentlyPublished.length === 0 ? (
+        <div class="empty-panel">No recipes published yet. Publish your first draft to see it live!</div>
+      ) : (
+        <div class="table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Recipe Title</th>
+                <th>Category</th>
+                <th>Published Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentlyPublished.map(recipe => (
+                <tr>
+                  <td><strong>{recipe.title}</strong></td>
+                  <td>{recipe.category_name || '—'}</td>
+                  <td>{new Date(recipe.published_at || recipe.updated_at).toLocaleDateString()}</td>
+                  <td class="actions-cell">
+                    <a href={`/admin/recipes/${recipe.id}`} class="action-link">Edit</a>
+                    <a href={`/${recipe.slug}/`} target="_blank" class="action-link text-success">View Live ↗</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+  </div>
+</AdminLayout>
+
+<style>
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  .dashboard-header h2 { margin: 0 0 0.25rem 0; font-size: 1.5rem; color: #18181b; }
+  .subtitle { margin: 0; font-size: 0.875rem; color: #71717a; }
+  
+  .quick-actions { display: flex; gap: 0.75rem; }
+  .btn-primary {
+    background-color: #18181b;
+    color: white;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  .btn-primary:hover { background-color: #27272a; }
+  .btn-secondary {
+    background-color: white;
+    color: #18181b;
+    border: 1px solid #d4d4d8;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+  .btn-secondary:hover { background-color: #f4f4f5; }
+  .btn-danger {
+    background-color: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  .btn-danger:hover { background-color: #fecaca; }
+  .btn-review-q {
+    background-color: #d97706;
+    color: white;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+  .btn-review-q:hover { background-color: #b45309; }
+  .clickable-stat {
+    text-decoration: none;
+    display: block;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .clickable-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08);
+  }
+  .stat-sub {
+    font-size: 0.75rem;
+    color: #a1a1aa;
+    margin-top: 0.25rem;
+  }
+
+  /* Stats Grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2.5rem;
+  }
+  .stat-card {
+    background: white;
+    padding: 1.25rem 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #e4e4e7;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+  .stat-card h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.75rem;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #18181b;
+  }
+  .text-success { color: #16a34a !important; }
+  .text-warning { color: #d97706 !important; }
+  .text-info { color: #0284c7 !important; }
+  .text-primary-c { color: #4f46e5 !important; }
+  .text-danger { color: #dc2626 !important; }
+  .text-muted { color: #71717a !important; }
+
+  /* Attention Sections */
+  .dashboard-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+  .attention-card {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+  .border-danger { border-color: #fca5a5 !important; }
+  .border-info { border-color: #bae6fd !important; }
+  
+  .attention-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .attention-header h3 { margin: 0; font-size: 1.1rem; color: #18181b; }
+  .view-all-link { font-size: 0.85rem; color: #2563eb; text-decoration: none; font-weight: 600; }
+  .view-all-link:hover { text-decoration: underline; }
+
+  .badge-alert {
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin-right: 0.75rem;
+  }
+  .badge-info {
+    background: #e0f2fe;
+    color: #0369a1;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin-right: 0.75rem;
+  }
+
+  .table-container { overflow-x: auto; }
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+  .admin-table th, .admin-table td {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .admin-table th {
+    background-color: #fafafa;
+    font-weight: 600;
+    color: #52525b;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .admin-table tr:last-child td { border-bottom: none; }
+
+  .stage-tag {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .stage-failed { background: #fee2e2; color: #dc2626; }
+  .stage-running { background: #e0e7ff; color: #4338ca; }
+  .source-tag { font-size: 0.8rem; color: #71717a; }
+  .error-text { color: #dc2626; font-size: 0.85rem; max-width: 380px; }
+
+  .actions-cell { display: flex; gap: 1rem; align-items: center; }
+  .action-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .action-link:hover { text-decoration: underline; }
+
+  .btn-action-small {
+    background: #18181b;
+    color: white;
+    padding: 0.4rem 0.85rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .btn-action-small:hover { background: #27272a; }
+
+  .btn-action-primary {
+    background: #4f46e5;
+    color: white;
+    padding: 0.4rem 0.85rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .btn-action-primary:hover { background: #4338ca; }
+
+  .empty-panel {
+    padding: 2.5rem;
+    text-align: center;
+    color: #71717a;
+    font-size: 0.95rem;
+  }
+  .empty-panel a { color: #2563eb; text-decoration: none; font-weight: 500; }
+</style>

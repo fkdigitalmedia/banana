@@ -1,0 +1,754 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getDefaultAuthor } from '../../../lib/db/author';
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+
+if (!db) {
+  return new Response('Database unavailable', { status: 500 });
+}
+
+const author = await getDefaultAuthor(db);
+---
+
+<AdminLayout title="Author Profile" activePage="author">
+  <div class="author-admin-container">
+    <div class="header-section">
+      <div class="header-titles">
+        <h2>Author & Editorial Profile</h2>
+        <p class="subtitle">Manage the recipe author's identity, bio, profile photo, and social links displayed across all recipe articles and Google Schema.org SEO.</p>
+      </div>
+      <div class="header-actions">
+        <button type="button" id="btn-save-author" class="btn btn-primary">
+          💾 Save Changes
+        </button>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="admin-toast" class="toast hidden"></div>
+
+    <div class="author-grid">
+      <!-- Left Column: Form Editor -->
+      <div class="form-column">
+        
+        <!-- 1. Profile Basics -->
+        <div class="card">
+          <div class="card-header">
+            <h3>👤 Profile Information</h3>
+            <span class="card-subtitle">Author identity and bio displayed to readers</span>
+          </div>
+
+          <div class="form-group">
+            <label for="input-author-name" class="form-label">Full Name <span class="required">*</span></label>
+            <input 
+              type="text" 
+              id="input-author-name" 
+              class="form-control" 
+              value={author.name} 
+              placeholder="e.g. Sally McKenney" 
+              required 
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="input-author-role" class="form-label">Title / Role</label>
+            <input 
+              type="text" 
+              id="input-author-role" 
+              class="form-control" 
+              value={author.role_title || ''} 
+              placeholder="e.g. Head Baker & Recipe Developer" 
+            />
+            <span class="form-hint">Appears as a badge next to the author's name</span>
+          </div>
+
+          <div class="form-group">
+            <label for="input-author-bio" class="form-label">Author Bio / Story</label>
+            <textarea 
+              id="input-author-bio" 
+              class="form-control" 
+              rows="4" 
+              placeholder="Write a warm, engaging short bio about the author's baking passion..."
+            >{author.bio || ''}</textarea>
+            <span class="form-hint">Brief intro (2–4 sentences) telling readers who developed and tested these recipes.</span>
+          </div>
+        </div>
+
+        <!-- 2. Profile Photo / Avatar -->
+        <div class="card">
+          <div class="card-header">
+            <h3>📸 Profile Photo / Avatar</h3>
+            <span class="card-subtitle">Upload a photo to Cloudflare R2 or specify an image URL</span>
+          </div>
+
+          <div class="avatar-manager-box">
+            <div class="avatar-preview-container">
+              <img 
+                id="avatar-preview-img" 
+                src={author.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&h=200&fit=crop&crop=faces'} 
+                alt="Author Avatar Preview" 
+                class="avatar-preview-img"
+              />
+            </div>
+
+            <div class="avatar-inputs-container">
+              <div class="upload-btn-wrap">
+                <label for="avatar-file-input" class="btn btn-secondary btn-upload">
+                  📁 Upload New Photo (R2)
+                </label>
+                <input 
+                  type="file" 
+                  id="avatar-file-input" 
+                  accept="image/jpeg,image/png,image/webp,image/avif" 
+                  style="display: none;" 
+                />
+                <span id="upload-status-text" class="upload-status-text">Supports JPG, PNG, WebP (Max 5MB)</span>
+              </div>
+
+              <div class="divider-text"><span>OR</span></div>
+
+              <div class="form-group mb-0">
+                <label for="input-avatar-url" class="form-label">Direct Image URL</label>
+                <input 
+                  type="url" 
+                  id="input-avatar-url" 
+                  class="form-control" 
+                  value={author.avatar_url || ''} 
+                  placeholder="https://example.com/avatar.jpg" 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Social Media Links -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🌐 Social Media & Web Profiles</h3>
+            <span class="card-subtitle">Connect readers to the author's social channels (renders clean icons in recipe articles)</span>
+          </div>
+
+          <div class="social-inputs-grid">
+            <div class="form-group">
+              <label for="input-instagram" class="form-label">
+                <span class="platform-icon ig">📸</span> Instagram Profile
+              </label>
+              <input 
+                type="url" 
+                id="input-instagram" 
+                class="form-control" 
+                value={author.social_instagram || ''} 
+                placeholder="https://instagram.com/yourhandle" 
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="input-pinterest" class="form-label">
+                <span class="platform-icon pin">📌</span> Pinterest Profile
+              </label>
+              <input 
+                type="url" 
+                id="input-pinterest" 
+                class="form-control" 
+                value={author.social_pinterest || ''} 
+                placeholder="https://pinterest.com/yourhandle" 
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="input-youtube" class="form-label">
+                <span class="platform-icon yt">▶️</span> YouTube Channel
+              </label>
+              <input 
+                type="url" 
+                id="input-youtube" 
+                class="form-control" 
+                value={author.social_youtube || ''} 
+                placeholder="https://youtube.com/@yourchannel" 
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="input-facebook" class="form-label">
+                <span class="platform-icon fb">👥</span> Facebook Page
+              </label>
+              <input 
+                type="url" 
+                id="input-facebook" 
+                class="form-control" 
+                value={author.social_facebook || ''} 
+                placeholder="https://facebook.com/yourpage" 
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="input-twitter" class="form-label">
+                <span class="platform-icon x">✖️</span> X (Twitter) Handle
+              </label>
+              <input 
+                type="url" 
+                id="input-twitter" 
+                class="form-control" 
+                value={author.social_twitter || ''} 
+                placeholder="https://x.com/yourhandle" 
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="input-website" class="form-label">
+                <span class="platform-icon web">🔗</span> Personal Website / Blog
+              </label>
+              <input 
+                type="url" 
+                id="input-website" 
+                class="form-control" 
+                value={author.website_url || ''} 
+                placeholder="https://yourwebsite.com" 
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="input-email" class="form-label">
+                <span class="platform-icon mail">✉️</span> Public Contact Email
+              </label>
+              <input 
+                type="email" 
+                id="input-email" 
+                class="form-control" 
+                value={author.email || ''} 
+                placeholder="baker@yourdomain.com" 
+              />
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Live Preview & Guidance -->
+      <div class="preview-column">
+        
+        <!-- Live Reader Preview -->
+        <div class="card sticky-preview-card">
+          <div class="card-header">
+            <h3>👁️ Live Reader Preview</h3>
+            <span class="card-subtitle">How readers see this at the bottom of recipe articles</span>
+          </div>
+
+          <div class="preview-card-box">
+            <div class="preview-author-box">
+              <div class="preview-avatar-wrap">
+                <img 
+                  id="live-preview-avatar" 
+                  src={author.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&h=200&fit=crop&crop=faces'} 
+                  alt="Author" 
+                  class="preview-avatar-img" 
+                />
+              </div>
+              <div class="preview-author-content">
+                <div class="preview-header-line">
+                  <span class="preview-tag">RECIPE BY</span>
+                  <h4 id="live-preview-name">{author.name}</h4>
+                  <span id="live-preview-role" class="preview-role-badge">{author.role_title || 'Recipe Developer'}</span>
+                </div>
+                <p id="live-preview-bio" class="preview-bio">{author.bio || 'Passionate about crafting warm, foolproof homemade banana breads and bakery favorites.'}</p>
+                <div class="preview-socials">
+                  <span class="preview-connect-label">Connect:</span>
+                  <span class="preview-pill ig">Instagram</span>
+                  <span class="preview-pill pin">Pinterest</span>
+                  <span class="preview-pill yt">YouTube</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="seo-benefit-box">
+            <h4>💡 Google E-E-A-T & Recipe SEO</h4>
+            <p>Filling out author details injects a valid Schema.org <code>Person</code> with <code>sameAs</code> social links into Google Recipe cards. This demonstrates genuine food expertise, improving search ranking authority.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  function showToast(message: string, isError = false) {
+    const toast = document.getElementById('admin-toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.className = `toast ${isError ? 'toast-error' : 'toast-success'}`;
+    toast.style.display = 'block';
+    setTimeout(() => {
+      toast.style.display = 'none';
+    }, 4000);
+  }
+
+  // Live Preview dynamic update
+  const inputName = document.getElementById('input-author-name') as HTMLInputElement;
+  const inputRole = document.getElementById('input-author-role') as HTMLInputElement;
+  const inputBio = document.getElementById('input-author-bio') as HTMLTextAreaElement;
+  const inputAvatarUrl = document.getElementById('input-avatar-url') as HTMLInputElement;
+  const avatarFileInput = document.getElementById('avatar-file-input') as HTMLInputElement;
+
+  const liveName = document.getElementById('live-preview-name');
+  const liveRole = document.getElementById('live-preview-role');
+  const liveBio = document.getElementById('live-preview-bio');
+  const liveAvatar = document.getElementById('live-preview-avatar') as HTMLImageElement;
+  const avatarPreviewImg = document.getElementById('avatar-preview-img') as HTMLImageElement;
+
+  if (inputName && liveName) {
+    inputName.addEventListener('input', () => {
+      liveName.textContent = inputName.value.trim() || 'BananaBread Baker';
+    });
+  }
+
+  if (inputRole && liveRole) {
+    inputRole.addEventListener('input', () => {
+      liveRole.textContent = inputRole.value.trim() || 'Recipe Developer';
+      liveRole.style.display = inputRole.value.trim() ? 'inline-block' : 'none';
+    });
+  }
+
+  if (inputBio && liveBio) {
+    inputBio.addEventListener('input', () => {
+      liveBio.textContent = inputBio.value.trim() || 'Passionate about crafting warm, foolproof homemade banana breads.';
+    });
+  }
+
+  if (inputAvatarUrl && liveAvatar && avatarPreviewImg) {
+    inputAvatarUrl.addEventListener('input', () => {
+      const url = inputAvatarUrl.value.trim();
+      if (url) {
+        liveAvatar.src = url;
+        avatarPreviewImg.src = url;
+      }
+    });
+  }
+
+  // Handle Avatar Image File Upload to R2
+  if (avatarFileInput) {
+    avatarFileInput.addEventListener('change', async () => {
+      const file = avatarFileInput.files?.[0];
+      if (!file) return;
+
+      const uploadStatus = document.getElementById('upload-status-text');
+      if (uploadStatus) uploadStatus.textContent = '⏳ Uploading to R2...';
+
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      try {
+        const res = await fetch('/api/admin/author/upload-avatar', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (inputAvatarUrl) inputAvatarUrl.value = data.avatarUrl;
+          if (avatarPreviewImg) avatarPreviewImg.src = data.avatarUrl;
+          if (liveAvatar) liveAvatar.src = data.avatarUrl;
+          if (uploadStatus) uploadStatus.textContent = '✓ Uploaded to R2 successfully!';
+          showToast('✓ Author photo uploaded and saved to R2!');
+        } else {
+          if (uploadStatus) uploadStatus.textContent = '✗ Upload failed';
+          showToast(data.error || 'Failed to upload photo', true);
+        }
+      } catch (err: any) {
+        if (uploadStatus) uploadStatus.textContent = '✗ Network error';
+        showToast(err.message || 'Upload error', true);
+      }
+    });
+  }
+
+  // Handle Save Profile
+  const btnSave = document.getElementById('btn-save-author') as HTMLButtonElement;
+  if (btnSave) {
+    btnSave.addEventListener('click', async () => {
+      const name = inputName.value.trim();
+      if (!name) {
+        showToast('Please enter an author name', true);
+        inputName.focus();
+        return;
+      }
+
+      btnSave.disabled = true;
+      btnSave.textContent = '⏳ Saving...';
+
+      const payload = {
+        name,
+        role_title: inputRole?.value.trim() || null,
+        bio: inputBio?.value.trim() || null,
+        avatar_url: inputAvatarUrl?.value.trim() || null,
+        social_instagram: (document.getElementById('input-instagram') as HTMLInputElement)?.value.trim() || null,
+        social_pinterest: (document.getElementById('input-pinterest') as HTMLInputElement)?.value.trim() || null,
+        social_youtube: (document.getElementById('input-youtube') as HTMLInputElement)?.value.trim() || null,
+        social_facebook: (document.getElementById('input-facebook') as HTMLInputElement)?.value.trim() || null,
+        social_twitter: (document.getElementById('input-twitter') as HTMLInputElement)?.value.trim() || null,
+        website_url: (document.getElementById('input-website') as HTMLInputElement)?.value.trim() || null,
+        email: (document.getElementById('input-email') as HTMLInputElement)?.value.trim() || null
+      };
+
+      try {
+        const res = await fetch('/api/admin/author', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('✓ Author profile & social links saved successfully!');
+        } else {
+          showToast(data.error || 'Failed to save author', true);
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Network error saving author', true);
+      } finally {
+        btnSave.disabled = false;
+        btnSave.textContent = '💾 Save Changes';
+      }
+    });
+  }
+</script>
+
+<style>
+  .author-admin-container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .header-titles h2 {
+    margin: 0 0 0.35rem 0;
+    font-size: 1.5rem;
+    color: #18181b;
+  }
+
+  .subtitle {
+    margin: 0;
+    color: #71717a;
+    font-size: 0.925rem;
+  }
+
+  .btn {
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s ease;
+  }
+
+  .btn-primary {
+    background-color: #8B4513;
+    color: white;
+  }
+  .btn-primary:hover { background-color: #6F370F; }
+
+  .btn-secondary {
+    background-color: #f4f4f5;
+    color: #27272a;
+    border: 1px solid #e4e4e7;
+  }
+  .btn-secondary:hover { background-color: #e4e4e7; }
+
+  .author-grid {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 1.75rem;
+    align-items: start;
+  }
+
+  .card {
+    background: #ffffff;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+
+  .card-header {
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f4f4f5;
+  }
+
+  .card-header h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.1rem;
+    color: #18181b;
+  }
+
+  .card-subtitle {
+    font-size: 0.825rem;
+    color: #71717a;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+  .form-group.mb-0 { margin-bottom: 0; }
+
+  .form-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #27272a;
+    margin-bottom: 0.4rem;
+  }
+
+  .required { color: #dc2626; }
+
+  .form-control {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+    font-family: inherit;
+    transition: border-color 0.15s ease;
+  }
+  .form-control:focus {
+    outline: none;
+    border-color: #8B4513;
+    box-shadow: 0 0 0 2px rgba(139, 69, 19, 0.15);
+  }
+
+  .form-hint {
+    display: block;
+    font-size: 0.775rem;
+    color: #71717a;
+    margin-top: 0.35rem;
+  }
+
+  /* Avatar Box */
+  .avatar-manager-box {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+  }
+
+  .avatar-preview-img {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #f4f4f5;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    background: #fafafa;
+    display: block;
+  }
+
+  .avatar-inputs-container {
+    flex: 1;
+  }
+
+  .upload-btn-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .btn-upload {
+    display: inline-block;
+    text-align: center;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .upload-status-text {
+    font-size: 0.775rem;
+    color: #71717a;
+  }
+
+  .divider-text {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 0.75rem 0;
+    color: #a1a1aa;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .divider-text::before, .divider-text::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #e4e4e7;
+  }
+  .divider-text span {
+    padding: 0 0.5rem;
+  }
+
+  /* Social Inputs */
+  .social-inputs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 768px) {
+    .social-inputs-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .platform-icon {
+    display: inline-block;
+    margin-right: 0.25rem;
+  }
+
+  /* Live Preview Box */
+  .sticky-preview-card {
+    position: sticky;
+    top: 1.5rem;
+  }
+
+  .preview-card-box {
+    background: #FFFDF9;
+    border: 1px solid #E8D5C4;
+    border-left: 4px solid #8B4513;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .preview-author-box {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .preview-avatar-img {
+    width: 75px;
+    height: 75px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #FFF8F0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    background: #f5ede4;
+  }
+
+  .preview-author-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .preview-header-line {
+    margin-bottom: 0.4rem;
+  }
+
+  .preview-tag {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8B4513;
+    font-weight: 700;
+    display: block;
+  }
+
+  .preview-author-content h4 {
+    margin: 0.15rem 0 0.25rem 0;
+    font-family: 'Georgia', serif;
+    font-size: 1.15rem;
+    color: #2C1810;
+  }
+
+  .preview-role-badge {
+    display: inline-block;
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    color: #6B4226;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.1rem 0.45rem;
+    border-radius: 10px;
+  }
+
+  .preview-bio {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #4A2E18;
+    margin: 0.5rem 0 0.75rem 0;
+  }
+
+  .preview-socials {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .preview-connect-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #6B4226;
+  }
+
+  .preview-pill {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 12px;
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    color: #6B4226;
+    font-weight: 600;
+  }
+
+  .seo-benefit-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 1rem;
+  }
+  .seo-benefit-box h4 {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.875rem;
+    color: #0f172a;
+  }
+  .seo-benefit-box p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  /* Toast Notification */
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    padding: 0.85rem 1.35rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    z-index: 1000;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  }
+  .toast.hidden { display: none; }
+  .toast-success { background: #16a34a; color: white; }
+  .toast-error { background: #dc2626; color: white; }
+
+  @media (max-width: 1024px) {
+    .author-grid {
+      grid-template-columns: 1fr;
+    }
+    .sticky-preview-card {
+      position: static;
+    }
+  }
+</style>

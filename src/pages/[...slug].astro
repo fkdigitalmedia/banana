@@ -1,0 +1,603 @@
+---
+export const prerender = false;
+
+import RecipeLayout from '../layouts/RecipeLayout.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import RecipeHero from '../components/RecipeHero.astro';
+import RecipeMeta from '../components/RecipeMeta.astro';
+import RecipeIngredients from '../components/RecipeIngredients.astro';
+import RecipeInstructions from '../components/RecipeInstructions.astro';
+import RecipeTips from '../components/RecipeTips.astro';
+import RecipeFAQ from '../components/RecipeFAQ.astro';
+import RelatedRecipes from '../components/RelatedRecipes.astro';
+import AuthorBox from '../components/AuthorBox.astro';
+import { getRecipeBySlug } from '../lib/db/recipes';
+import { getDefaultAuthor } from '../lib/db/author';
+import { getDeterministicRelatedRecipes } from '../lib/seo/linking';
+import { injectContextualLinks } from '../lib/seo/contextual';
+import { generateRecipeJsonLd, generateBreadcrumbJsonLd } from '../lib/seo/jsonld';
+import { generateMeta } from '../lib/seo/meta';
+import { sanitizeRecipeDescription } from '../lib/normalization/normalizer';
+
+const { slug } = Astro.params;
+const rawSlug = (slug || '').replace(/^\/+|\/+$/g, '').replace(/^recipes\//, '');
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+
+if (!rawSlug || !db) {
+  return Astro.redirect('/404');
+}
+
+const isPreview = Astro.url.searchParams.get('preview') === 'true';
+
+import { resolveRedirect } from '../lib/seo/redirects';
+
+// Fetch recipe from D1
+let recipe = await getRecipeBySlug(db, rawSlug);
+
+// If not found, check if it was an old slug that was changed
+if (!recipe) {
+  const redirectInfo = await resolveRedirect(db, rawSlug);
+  if (redirectInfo && redirectInfo.targetSlug) {
+    return Astro.redirect(`/${redirectInfo.targetSlug}/`, redirectInfo.httpStatus || 301);
+  }
+  return Astro.redirect('/404');
+}
+
+// Only allow viewing if published OR previewing draft
+if (recipe.status !== 'PUBLISHED' && !isPreview) {
+  return Astro.redirect('/404');
+}
+
+const content = recipe.content || {};
+const seo = recipe.seo || {};
+const displayDescription = sanitizeRecipeDescription(seo.meta_description || recipe.description);
+
+// Fetch author profile
+const author = db ? await getDefaultAuthor(db).catch(() => null) : null;
+
+// Fetch 4-6 deterministic related published recipes
+const relatedRecipes = await getDeterministicRelatedRecipes(db, recipe.id, 6);
+
+// Fetch candidate published recipes for contextual internal links
+const candQuery = await db.prepare('SELECT id, title, slug FROM recipes WHERE status = "PUBLISHED" AND id != ?').bind(recipe.id).all<{ id: number; title: string; slug: string }>();
+const publishedCandidates = candQuery.results || [];
+
+// Fetch in-article process photos
+const inArticleImagesQuery = await db
+  .prepare(
+    `SELECT r2_key, alt_text, caption, width, height, placement, step_number 
+     FROM recipe_images 
+     WHERE recipe_id = ? AND status = 'READY' AND placement != 'HERO' AND r2_key != COALESCE(?, '')
+     GROUP BY r2_key
+     ORDER BY CASE WHEN step_number IS NOT NULL THEN 0 ELSE 1 END, step_number ASC, id ASC`
+  )
+  .bind(recipe.id, recipe.hero_image_key || '')
+  .all<{
+    r2_key: string;
+    alt_text: string | null;
+    caption: string | null;
+    width: number | null;
+    height: number | null;
+    placement: string;
+    step_number: number | null;
+  }>();
+const inArticleImages = inArticleImagesQuery.results || [];
+
+// Inject contextual internal links into introduction
+let processedIntroduction = content.introduction || '';
+if (processedIntroduction && publishedCandidates.length > 0) {
+  const linkRes = injectContextualLinks(processedIntroduction, recipe.id, publishedCandidates, 2);
+  processedIntroduction = linkRes.content;
+}
+
+// Parse structured guidance & content
+let ingredientGuidance: { ingredient: string; guidance: string }[] = [];
+if (content.ingredient_guidance) {
+  try {
+    ingredientGuidance = typeof content.ingredient_guidance === 'string'
+      ? JSON.parse(content.ingredient_guidance)
+      : content.ingredient_guidance;
+  } catch { ingredientGuidance = []; }
+}
+
+let cookingGuidance: string[] = [];
+if (content.cooking_guidance) {
+  try {
+    cookingGuidance = typeof content.cooking_guidance === 'string'
+      ? JSON.parse(content.cooking_guidance)
+      : content.cooking_guidance;
+  } catch { cookingGuidance = []; }
+}
+
+let tips: string[] = [];
+if (content.tips) {
+  try {
+    tips = typeof content.tips === 'string' ? JSON.parse(content.tips) : content.tips;
+  } catch { tips = []; }
+}
+
+let variations: { name: string; description: string }[] = [];
+if (content.variations) {
+  try {
+    variations = typeof content.variations === 'string' ? JSON.parse(content.variations) : content.variations;
+  } catch { variations = []; }
+}
+
+let faq: { question: string; answer: string }[] = [];
+if (content.faq) {
+  try {
+    faq = typeof content.faq === 'string' ? JSON.parse(content.faq) : content.faq;
+  } catch { faq = []; }
+}
+
+// Generate SEO meta & JSON-LD
+const meta = generateMeta(recipe, seo, siteUrl);
+const recipeJsonLdString = generateRecipeJsonLd(recipe, recipe.ingredients || [], recipe.instructions || [], content, seo, siteUrl, author);
+
+const breadcrumbItems = [
+  { name: 'Home', url: `${siteUrl.replace(/\/+$/, '')}/` },
+  { name: 'Recipes', url: `${siteUrl.replace(/\/+$/, '')}/recipes/` },
+  ...(recipe.category_name ? [{ name: recipe.category_name, url: `${siteUrl.replace(/\/+$/, '')}/recipes/${recipe.category_slug || 'baking'}/` }] : []),
+  { name: recipe.title, url: meta.canonical }
+];
+const breadcrumbJsonLdString = generateBreadcrumbJsonLd(breadcrumbItems);
+
+const schemas: any[] = [];
+try { schemas.push(JSON.parse(recipeJsonLdString)); } catch {}
+try { schemas.push(JSON.parse(breadcrumbJsonLdString)); } catch {}
+---
+
+<RecipeLayout 
+  recipe={recipe} 
+  jsonLd={schemas}
+  canonical={meta.canonical}
+  noindex={isPreview || recipe.status !== 'PUBLISHED'}
+>
+  {isPreview && (
+    <div class="preview-banner">
+      ⚠️ <strong>Admin Preview Mode</strong> — This draft recipe is not publicly visible until published.
+    </div>
+  )}
+
+  <div class="container recipe-container">
+    
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'Recipes', href: '/recipes/' },
+      ...(recipe.category_name ? [{ label: recipe.category_name, href: `/recipes/${recipe.category_slug || 'baking'}/` }] : []),
+      { label: recipe.title }
+    ]} />
+
+    <RecipeHero 
+      title={recipe.title}
+      description={displayDescription}
+      heroImageKey={recipe.hero_image_key}
+      r2BaseUrl={r2BaseUrl}
+    />
+
+    <RecipeMeta 
+      prepTime={recipe.prep_time}
+      cookTime={recipe.cook_time}
+      totalTime={recipe.total_time}
+      yieldText={recipe.yield_text}
+      servings={recipe.servings}
+      cuisine={recipe.cuisine}
+    />
+
+    <!-- Jump to Recipe Action Bar -->
+    <div class="jump-bar">
+      <a href="#recipe-card" class="btn-jump">⬇ Jump to Recipe Card</a>
+      <button type="button" onclick="window.print()" class="btn-print">🖨️ Print Recipe</button>
+    </div>
+
+    <!-- Editorial Article Body -->
+    <div class="article-body">
+      
+      {processedIntroduction && (
+        <section class="editorial-section intro-section">
+          {processedIntroduction.split('\n\n').map((paragraph: string) => (
+            <p set:html={paragraph} />
+          ))}
+        </section>
+      )}
+
+      {content.why_this_recipe && (
+        <section class="why-love-card">
+          <h3>🌟 Why You'll Love This Recipe</h3>
+          {content.why_this_recipe.split('\n').filter(Boolean).map((line: string) => (
+            <div class="why-item">{line.replace(/^[•\-\*]\s*/, '')}</div>
+          ))}
+        </section>
+      )}
+
+      {ingredientGuidance.length > 0 && (
+        <section class="editorial-section">
+          <h2>Key Ingredients & Baker's Notes</h2>
+          <div class="guidance-grid">
+            {ingredientGuidance.map(item => (
+              <div class="guidance-card">
+                <h4>{item.ingredient}</h4>
+                <p>{item.guidance}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {cookingGuidance.length > 0 && (
+        <section class="editorial-section">
+          <h2>Step-by-Step Technique & Method</h2>
+          {cookingGuidance.map(text => (
+            <p>{text}</p>
+          ))}
+        </section>
+      )}
+
+      {inArticleImages.length > 0 && (
+        <section class="editorial-section process-gallery-section">
+          <h2>📸 Step-by-Step Visual Guide</h2>
+          <p class="section-lead">Visual walkthrough of key preparation and baking milestones:</p>
+          <div class="process-images-grid">
+            {inArticleImages.map((img, idx) => {
+              const imgUrl = r2BaseUrl ? `${r2BaseUrl}/${img.r2_key}` : `/api/image/${img.r2_key}`;
+              const stepTitle = img.step_number ? `Step ${img.step_number}` : (img.placement === 'STEP' ? `Step ${idx + 1}` : null);
+              const label = img.caption || img.alt_text || 'Baking process';
+              return (
+                <figure class="process-image-card">
+                  <div class="process-image-wrap">
+                    <img 
+                      src={imgUrl} 
+                      alt={label} 
+                      loading="lazy" 
+                      width={img.width || 600} 
+                      height={img.height || 400} 
+                      class="process-img"
+                    />
+                    {stepTitle && <span class="step-badge">{stepTitle}</span>}
+                  </div>
+                  {label && <figcaption class="process-caption">{label}</figcaption>}
+                </figure>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {tips.length > 0 && (
+        <RecipeTips tips={tips} />
+      )}
+
+      {variations.length > 0 && (
+        <section class="editorial-section variations-section">
+          <h2>Delicious Variations & Mix-Ins</h2>
+          <div class="variations-grid">
+            {variations.map(v => (
+              <div class="variation-item">
+                <h4>{v.name}</h4>
+                <p>{v.description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {content.serving_suggestions && (
+        <section class="editorial-section">
+          <h2>How to Serve & Pair</h2>
+          <p>{content.serving_suggestions}</p>
+        </section>
+      )}
+
+      {content.storage && (
+        <section class="editorial-section storage-card">
+          <h2>📦 Storage, Freezing & Reheating</h2>
+          {content.storage.split('\n\n').map((para: string) => (
+            <p>{para}</p>
+          ))}
+        </section>
+      )}
+
+      {faq.length > 0 && (
+        <RecipeFAQ faq={faq} />
+      )}
+
+    </div>
+
+    <!-- Printable Recipe Card -->
+    <div id="recipe-card" class="printable-recipe-card">
+      <div class="card-top">
+        <h2>{recipe.title}</h2>
+        <p class="recipe-summary">{displayDescription}</p>
+        
+        <div class="recipe-facts-bar">
+          <div class="fact"><span>Prep Time:</span> {recipe.prep_time || '—'} mins</div>
+          <div class="fact"><span>Cook Time:</span> {recipe.cook_time || '—'} mins</div>
+          <div class="fact"><span>Total Time:</span> {recipe.total_time || '—'} mins</div>
+          {recipe.yield_text && <div class="fact"><span>Yield:</span> {recipe.yield_text}</div>}
+          <div class="fact"><span>Servings:</span> {recipe.servings || '—'}</div>
+        </div>
+      </div>
+
+      <div class="recipe-main-grid">
+        <div class="ingredients-column">
+          <RecipeIngredients ingredients={recipe.ingredients || []} servings={recipe.servings} />
+        </div>
+        <div class="instructions-column">
+          <RecipeInstructions instructions={recipe.instructions || []} />
+        </div>
+      </div>
+    </div>
+
+    <!-- Meet the Author Section -->
+    {author && (
+      <AuthorBox author={author} />
+    )}
+
+    <!-- Related Recipes -->
+    {relatedRecipes.length > 0 && (
+      <RelatedRecipes recipes={relatedRecipes} r2BaseUrl={r2BaseUrl} />
+    )}
+
+  </div>
+</RecipeLayout>
+
+<style>
+  .preview-banner {
+    background: #fef3c7;
+    border-bottom: 1px solid #fde68a;
+    color: #92400e;
+    text-align: center;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .recipe-container {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 4rem 1rem;
+  }
+
+  .jump-bar {
+    display: flex;
+    gap: 1rem;
+    margin: 1.5rem 0 2.5rem 0;
+  }
+  .btn-jump {
+    background: #8B4513;
+    color: white;
+    padding: 0.7rem 1.35rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: background-color 0.15s;
+  }
+  .btn-jump:hover { background: #6F370F; }
+  .btn-print {
+    background: #FFF8F0;
+    color: #8B4513;
+    border: 1px solid #E8D5C4;
+    padding: 0.7rem 1.35rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: background-color 0.15s;
+  }
+  .btn-print:hover { background: #FDE8D3; }
+
+  .article-body {
+    font-size: 1.125rem;
+    line-height: 1.8;
+    color: #2C1810;
+    margin-bottom: 3.5rem;
+  }
+  .editorial-section { margin-bottom: 2.75rem; }
+  .editorial-section h2 {
+    font-family: 'Georgia', 'Palatino', serif;
+    color: #2C1810;
+    font-size: 1.65rem;
+    margin-bottom: 1.15rem;
+    border-bottom: 2px solid #E8D5C4;
+    padding-bottom: 0.45rem;
+  }
+  .editorial-section p { margin-bottom: 1.25rem; }
+
+  .why-love-card {
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    border-left: 4px solid #D2691E;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 2.25rem 0;
+  }
+  .why-love-card h3 { margin: 0 0 1rem 0; color: #8B4513; font-family: 'Georgia', serif; }
+  .why-item {
+    position: relative;
+    padding-left: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  .why-item::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: #5A7A3A;
+    font-weight: bold;
+  }
+
+  .guidance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+    margin-top: 1rem;
+  }
+  .guidance-card {
+    background: #FFFDF7;
+    border: 1px solid #E8D5C4;
+    border-radius: 8px;
+    padding: 1.25rem;
+  }
+  .guidance-card h4 { margin: 0 0 0.5rem 0; color: #8B4513; font-size: 1.05rem; }
+  .guidance-card p { margin: 0; font-size: 0.95rem; line-height: 1.5; color: #4A2E18; }
+
+  /* Process Photos Gallery */
+  .process-gallery-section {
+    margin: 3.5rem 0;
+  }
+  .section-lead {
+    font-size: 1.05rem;
+    color: #6B4226;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+  }
+  .process-images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.75rem;
+  }
+  .process-image-card {
+    margin: 0;
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 3px 10px rgba(139, 69, 19, 0.05);
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .process-image-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(139, 69, 19, 0.1);
+  }
+  .process-image-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+    background: #f5ede4;
+  }
+  .process-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+  }
+  .process-image-card:hover .process-img {
+    transform: scale(1.02);
+  }
+  .step-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: #8B4513;
+    color: #ffffff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+    letter-spacing: 0.5px;
+  }
+  .process-caption {
+    padding: 0.9rem 1rem;
+    font-size: 0.925rem;
+    line-height: 1.45;
+    color: #4A2E18;
+    background: #FFF8F0;
+    border-top: 1px solid #F0E2D4;
+    flex-grow: 1;
+  }
+  @media (max-width: 640px) {
+    .process-images-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .variations-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  .variation-item {
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    border-radius: 6px;
+    padding: 1.15rem 1.25rem;
+  }
+  .variation-item h4 { margin: 0 0 0.35rem 0; color: #8B4513; }
+  .variation-item p { margin: 0; font-size: 0.95rem; }
+
+  .storage-card {
+    background: #FAF8F5;
+    border: 1px solid #E8D5C4;
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+  .storage-card h2 { border: none; padding: 0; margin-bottom: 0.75rem; }
+
+  /* Printable Recipe Card */
+  .printable-recipe-card {
+    background: #FFFDF7;
+    border: 2px solid #8B4513;
+    border-radius: 12px;
+    padding: 2.25rem;
+    margin-bottom: 3.5rem;
+    box-shadow: 0 4px 20px rgba(139, 69, 19, 0.08);
+  }
+  .card-top {
+    border-bottom: 2px dashed #E8D5C4;
+    padding-bottom: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card-top h2 { margin: 0 0 0.5rem 0; font-family: 'Georgia', serif; color: #2C1810; font-size: 1.85rem; }
+  .recipe-summary { margin: 0 0 1.25rem 0; color: #6B4226; font-size: 1rem; }
+  
+  .recipe-facts-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    background: #FFF8F0;
+    padding: 0.85rem 1.25rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+  .fact span { font-weight: 700; color: #8B4513; }
+
+  .recipe-main-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  @media (min-width: 768px) {
+    .recipe-main-grid {
+      grid-template-columns: 1fr 1.5fr;
+    }
+  }
+
+  :global(.editorial-internal-link) {
+    color: var(--primary, #8B4513);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: var(--accent, #D2691E);
+    text-underline-offset: 3px;
+    transition: color 0.15s;
+  }
+  :global(.editorial-internal-link:hover) {
+    color: var(--accent, #D2691E);
+  }
+
+  @media print {
+    .jump-bar, nav, header, footer, .why-love-card, .editorial-section, .preview-banner { display: none !important; }
+    .printable-recipe-card { border: 1px solid #000; box-shadow: none; padding: 0; }
+  }
+</style>

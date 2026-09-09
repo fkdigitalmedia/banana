@@ -1,0 +1,21 @@
+name = "banana-recipe-blog"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "RECIPE_DB"
+database_id = "8f7e13ec-9534-4633-a6dc-d84382a41f14"
+
+[[r2_buckets]]
+binding = "RECIPE_IMAGES"
+bucket_name = "recipe-images"
+
+[vars]
+SITE_URL = "https://banana-recipe-blog.pages.dev"
+# Secrets to be set via `wrangler secret put <name>`:
+# DEEPSEEK_API_KEY
+# ADMIN_USERNAME
+# ADMIN_PASSWORD_HASH
+# JWT_SECRET
+# R2_PUBLIC_URL

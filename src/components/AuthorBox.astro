@@ -1,0 +1,276 @@
+---
+import type { AuthorRecord } from '../lib/db/author';
+
+interface Props {
+  author?: AuthorRecord | null;
+}
+
+const { author } = Astro.props;
+
+if (!author) {
+  return null;
+}
+
+const name = author.name || 'BananaBread Baker';
+const role = author.role_title || 'Recipe Developer & Baker';
+const bio = author.bio || 'Passionate about crafting warm, foolproof homemade banana breads and bakery favorites.';
+const avatar = author.avatar_url;
+const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'BB';
+---
+
+<section class="author-box-card" aria-label="About the Recipe Author">
+  <div class="author-box-inner">
+    <div class="author-avatar-wrap">
+      {avatar ? (
+        <img 
+          src={avatar} 
+          alt={name} 
+          width="110" 
+          height="110" 
+          loading="lazy" 
+          class="author-avatar-img" 
+        />
+      ) : (
+        <div class="author-avatar-placeholder">
+          <span>{initials}</span>
+        </div>
+      )}
+    </div>
+
+    <div class="author-info-content">
+      <div class="author-header-line">
+        <span class="author-intro-tag">Recipe By</span>
+        <h3 class="author-name">{name}</h3>
+        {role && <span class="author-role-badge">{role}</span>}
+      </div>
+
+      <p class="author-bio">{bio}</p>
+
+      <div class="author-social-links">
+        <span class="social-connect-label">Connect:</span>
+        
+        {author.social_instagram && (
+          <a href={author.social_instagram} target="_blank" rel="noopener noreferrer" class="social-icon-btn instagram" title={`Follow ${name} on Instagram`} aria-label="Instagram">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+            </svg>
+            <span>Instagram</span>
+          </a>
+        )}
+
+        {author.social_pinterest && (
+          <a href={author.social_pinterest} target="_blank" rel="noopener noreferrer" class="social-icon-btn pinterest" title={`Follow ${name} on Pinterest`} aria-label="Pinterest">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0a12 12 0 0 0-4.37 23.18c-.07-.98-.13-2.5.03-3.58l.9-3.83s-.23-.46-.23-1.15c0-1.08.63-1.88 1.4-1.88.66 0 .98.5 1 .98 0 .67-.42 1.66-.65 2.58-.19.78.39 1.42 1.15 1.42 1.39 0 2.45-1.46 2.45-3.58 0-1.87-1.34-3.18-3.26-3.18-2.38 0-3.78 1.79-3.78 3.63 0 .72.28 1.49.62 1.91.07.08.08.15.06.24l-.23.95c-.04.16-.13.2-.3.12-1.12-.52-1.82-2.16-1.82-3.48 0-2.83 2.06-5.43 5.93-5.43 3.12 0 5.54 2.22 5.54 5.19 0 3.1-1.95 5.59-4.66 5.59-.91 0-1.77-.47-2.06-1.03l-.56 2.14c-.2 1.25-.75 2.81-1.12 3.73A12 12 0 1 0 12 0z"/>
+            </svg>
+            <span>Pinterest</span>
+          </a>
+        )}
+
+        {author.social_youtube && (
+          <a href={author.social_youtube} target="_blank" rel="noopener noreferrer" class="social-icon-btn youtube" title={`Watch ${name} on YouTube`} aria-label="YouTube">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+            </svg>
+            <span>YouTube</span>
+          </a>
+        )}
+
+        {author.social_facebook && (
+          <a href={author.social_facebook} target="_blank" rel="noopener noreferrer" class="social-icon-btn facebook" title="Follow on Facebook" aria-label="Facebook">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+            </svg>
+            <span>Facebook</span>
+          </a>
+        )}
+
+        {author.social_twitter && (
+          <a href={author.social_twitter} target="_blank" rel="noopener noreferrer" class="social-icon-btn twitter" title="Follow on X (Twitter)" aria-label="X (Twitter)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            </svg>
+            <span>X</span>
+          </a>
+        )}
+
+        {author.website_url && (
+          <a href={author.website_url} target="_blank" rel="noopener noreferrer" class="social-icon-btn website" title="Visit Website" aria-label="Website">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <span>Website</span>
+          </a>
+        )}
+
+        {author.email && (
+          <a href={`mailto:${author.email}`} class="social-icon-btn email" title="Send an email" aria-label="Email">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+            <span>Email</span>
+          </a>
+        )}
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .author-box-card {
+    background: #FFFDF9;
+    border: 1px solid #E8D5C4;
+    border-left: 5px solid #8B4513;
+    border-radius: 12px;
+    padding: 1.75rem 2rem;
+    margin: 3.5rem 0 2rem 0;
+    box-shadow: 0 4px 16px rgba(139, 69, 19, 0.04);
+  }
+
+  .author-box-inner {
+    display: flex;
+    gap: 1.75rem;
+    align-items: flex-start;
+  }
+
+  .author-avatar-wrap {
+    flex-shrink: 0;
+  }
+
+  .author-avatar-img {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #FFF8F0;
+    box-shadow: 0 4px 12px rgba(139, 69, 19, 0.15);
+    background: #f5ede4;
+    display: block;
+  }
+
+  .author-avatar-placeholder {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #8B4513, #D2691E);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 700;
+    font-family: 'Georgia', serif;
+    box-shadow: 0 4px 12px rgba(139, 69, 19, 0.15);
+  }
+
+  .author-info-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .author-header-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .author-intro-tag {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8B4513;
+    font-weight: 700;
+  }
+
+  .author-name {
+    margin: 0;
+    font-family: 'Georgia', 'Palatino', serif;
+    font-size: 1.45rem;
+    color: #2C1810;
+    line-height: 1.2;
+  }
+
+  .author-role-badge {
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    color: #6B4226;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+  }
+
+  .author-bio {
+    font-size: 1rem;
+    line-height: 1.65;
+    color: #4A2E18;
+    margin: 0 0 1.25rem 0;
+  }
+
+  .author-social-links {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .social-connect-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #6B4226;
+    margin-right: 0.25rem;
+  }
+
+  .social-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #FFF8F0;
+    border: 1px solid #E8D5C4;
+    color: #6B4226;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.825rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .social-icon-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(139, 69, 19, 0.12);
+  }
+
+  .social-icon-btn.instagram:hover { background: #E1306C; color: #fff; border-color: #E1306C; }
+  .social-icon-btn.pinterest:hover { background: #E60023; color: #fff; border-color: #E60023; }
+  .social-icon-btn.youtube:hover { background: #FF0000; color: #fff; border-color: #FF0000; }
+  .social-icon-btn.facebook:hover { background: #1877F2; color: #fff; border-color: #1877F2; }
+  .social-icon-btn.twitter:hover { background: #000000; color: #fff; border-color: #000000; }
+  .social-icon-btn.website:hover { background: #8B4513; color: #fff; border-color: #8B4513; }
+  .social-icon-btn.email:hover { background: #5A7A3A; color: #fff; border-color: #5A7A3A; }
+
+  @media (max-width: 640px) {
+    .author-box-card {
+      padding: 1.5rem 1.25rem;
+    }
+    .author-box-inner {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 1.25rem;
+    }
+    .author-header-line {
+      justify-content: center;
+    }
+    .author-social-links {
+      justify-content: center;
+    }
+  }
+</style>

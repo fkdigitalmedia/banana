@@ -1,0 +1,98 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+
+const env = (Astro.locals as any).runtime?.env || {};
+const configuredEmail = env.CONTACT_EMAIL || 'legal@bananabread.org';
+
+const title = "Terms of Service — BananaBread";
+const description = "Terms of Service governing access, content usage, and recipe printing on BananaBread.";
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container page-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'Terms of Service' }
+    ]} />
+
+    <article class="legal-content prose">
+      <h1>Terms of Service</h1>
+      <p class="updated-date">Last Updated: March 2026</p>
+      
+      <p class="lead">Please read these Terms of Service carefully before accessing or using the BananaBread website.</p>
+
+      <h2>1. Acceptance of Terms</h2>
+      <p>By accessing or browsing this website, you agree to be bound by these Terms of Service and all applicable laws and regulations. If you do not agree with any of these terms, you are prohibited from using or accessing this site.</p>
+
+      <h2>2. Permitted Use & Recipe Printing</h2>
+      <p>BananaBread grants you a personal, non-exclusive, revocable license to access our recipes, culinary articles, and instructional content for your own personal, non-commercial home cooking use. You may print individual recipe cards solely for personal kitchen use.</p>
+
+      <h2>3. Intellectual Property Rights</h2>
+      <p>All original editorial commentary, articles, photography, website layout, code, and graphical assets are protected by copyright and intellectual property laws. You may not scrape, republish, resell, redistribute, or reproduce bulk content from BananaBread without express prior written consent.</p>
+
+      <h2>4. User Conduct & Site Availability</h2>
+      <p>You agree not to engage in any automated extraction (including unauthorized web scraping or crawling that disrupts site performance), attempt to breach server authentication on administrative endpoints, or interfere with other readers' enjoyment of the website.</p>
+
+      <h2>5. Disclaimer of Warranties</h2>
+      <p>All materials and information on BananaBread are provided on an "as is" and "as available" basis without warranties of any kind, whether express or implied. Please review our <a href="/disclaimer/">Recipe Disclaimer</a> for specific details regarding culinary outcomes and food safety.</p>
+
+      <h2>6. Limitation of Liability</h2>
+      <p>In no event shall BananaBread, its contributors, or its operators be liable for any indirect, incidental, or consequential damages resulting from the use or inability to use the materials on this website.</p>
+
+      <h2>7. Modifications to Terms</h2>
+      <p>We reserve the right to revise these Terms of Service at any time without prior notice. By continuing to use the site after changes are posted, you agree to be bound by the updated terms.</p>
+
+      <h2>8. Inquiries</h2>
+      <p>For questions or licensing inquiries regarding these terms, please contact us at: <a href={`mailto:${configuredEmail}`}>{configuredEmail}</a>.</p>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-container {
+    padding: 2rem 1rem;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  .legal-content h1 {
+    font-size: 2.5rem;
+    color: var(--primary);
+    margin-bottom: 0.5rem;
+  }
+  
+  .updated-date {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    font-style: italic;
+    font-size: 0.95rem;
+  }
+
+  .lead {
+    font-size: 1.15rem;
+    line-height: 1.7;
+    color: var(--text-primary);
+    margin-bottom: 2rem;
+  }
+  
+  .legal-content h2 {
+    color: var(--primary);
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.4rem;
+  }
+  
+  .legal-content p {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    margin-bottom: 1.25rem;
+    color: var(--text-primary);
+  }
+
+  .legal-content a {
+    color: var(--primary);
+    text-decoration: underline;
+    font-weight: 500;
+  }
+</style>

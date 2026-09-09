@@ -1,0 +1,246 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import RecipeCard from '../../components/RecipeCard.astro';
+import Search from '../../components/Search.astro';
+import Breadcrumbs from '../../components/Breadcrumbs.astro';
+import { getPublishedRecipes, getCategories, countRecipes } from '../../lib/db/recipes';
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+
+const url = new URL(Astro.request.url);
+const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+const pageSize = 12;
+const offset = (page - 1) * pageSize;
+
+const [recipes, totalCount, categories] = await Promise.all([
+  db ? getPublishedRecipes(db, pageSize, offset) : [],
+  db ? countRecipes(db, { status: 'published' }) : 0,
+  db ? getCategories(db) : []
+]);
+
+const totalPages = Math.ceil(totalCount / pageSize) || 1;
+
+const title = "All Homemade Recipes — BananaBread Recipe Index";
+const description = "Browse our full collection of tested homemade recipes, artisan loaves, sweet baked goods, and foolproof kitchen favorites.";
+const canonical = `${siteUrl.replace(/\/+$/, '')}/recipes/`;
+---
+
+<BaseLayout title={title} description={description} canonical={canonical}>
+  <div class="container catalog-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'All Recipes' }
+    ]} />
+
+    <header class="catalog-header">
+      <span class="catalog-badge">📖 Recipe Collection</span>
+      <h1 class="catalog-title">All Homemade Recipes</h1>
+      <p class="catalog-subtitle">
+        Every recipe is tested in our kitchen with exact measurements and step-by-step guidance.
+      </p>
+
+      <div class="catalog-search">
+        <Search />
+      </div>
+
+      {categories.length > 0 && (
+        <div class="category-filters">
+          <a href="/recipes/" class="cat-filter-pill active">All Recipes</a>
+          {categories.map((cat: any) => (
+            <a href={`/recipes/${cat.slug}/`} class="cat-filter-pill">
+              {cat.name}
+            </a>
+          ))}
+        </div>
+      )}
+    </header>
+
+    {recipes.length === 0 ? (
+      <div class="empty-catalog">
+        <span class="empty-icon">🍞</span>
+        <h2>No published recipes found</h2>
+        <p>We are actively testing new recipes. Check back soon for fresh bakes!</p>
+        <a href="/" class="btn-home">← Back to Homepage</a>
+      </div>
+    ) : (
+      <>
+        <div class="recipe-grid">
+          {recipes.map((recipe) => (
+            <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+          ))}
+        </div>
+
+        {totalPages > 1 && (
+          <nav class="pagination" aria-label="Recipe pagination">
+            {page > 1 ? (
+              <a href={`/recipes/?page=${page - 1}`} class="page-link page-prev">← Previous</a>
+            ) : (
+              <span class="page-link disabled">← Previous</span>
+            )}
+
+            <div class="page-numbers">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <a 
+                  href={`/recipes/?page=${p}`} 
+                  class={`page-number ${p === page ? 'active' : ''}`}
+                  aria-current={p === page ? 'page' : undefined}
+                >
+                  {p}
+                </a>
+              ))}
+            </div>
+
+            {page < totalPages ? (
+              <a href={`/recipes/?page=${page + 1}`} class="page-link page-next">Next →</a>
+            ) : (
+              <span class="page-link disabled">Next →</span>
+            )}
+          </nav>
+        )}
+      </>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  .catalog-container {
+    padding-top: 1.5rem;
+    padding-bottom: 5rem;
+  }
+
+  .catalog-header {
+    text-align: center;
+    max-width: 720px;
+    margin: 1.5rem auto 3rem auto;
+  }
+
+  .catalog-badge {
+    display: inline-block;
+    background: #FDE8D3;
+    color: var(--primary);
+    padding: 0.35rem 0.85rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+
+  .catalog-title {
+    font-family: 'Georgia', serif;
+    font-size: 2.75rem;
+    color: var(--text-primary);
+    margin: 0 0 0.75rem 0;
+    line-height: 1.2;
+  }
+
+  .catalog-subtitle {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    margin: 0 0 1.75rem 0;
+    line-height: 1.5;
+  }
+
+  .catalog-search {
+    max-width: 460px;
+    margin: 0 auto 1.75rem auto;
+  }
+
+  .category-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    justify-content: center;
+  }
+
+  .cat-filter-pill {
+    padding: 0.5rem 1.15rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.15s ease-in-out;
+  }
+
+  .cat-filter-pill:hover,
+  .cat-filter-pill.active {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+
+  .recipe-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .empty-catalog {
+    text-align: center;
+    padding: 4rem 1.5rem;
+    background: var(--surface);
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    max-width: 500px;
+    margin: 2rem auto;
+  }
+  .empty-icon { font-size: 3rem; display: block; margin-bottom: 0.75rem; }
+  .empty-catalog h2 { font-family: 'Georgia', serif; color: var(--primary); margin-bottom: 0.5rem; }
+  .empty-catalog p { color: var(--text-secondary); margin-bottom: 1.5rem; }
+  .btn-home {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  .page-link {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--primary);
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .page-link:hover:not(.disabled) { background: #fbeee0; }
+  .page-link.disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .page-numbers { display: flex; gap: 0.35rem; }
+  .page-number {
+    padding: 0.5rem 0.85rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+  }
+  .page-number:hover { background: var(--surface); color: var(--primary); }
+  .page-number.active { background: var(--primary); color: white; }
+
+  @media (max-width: 768px) {
+    .catalog-title { font-size: 2.15rem; }
+    .catalog-container { padding-top: 1rem; }
+  }
+</style>

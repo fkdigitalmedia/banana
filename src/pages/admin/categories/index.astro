@@ -1,0 +1,137 @@
+---
+export const prerender = false;
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+
+// MOCK DATA
+const categories = [
+  { id: '1', name: 'Bread', slug: 'bread', recipe_count: 5 },
+  { id: '2', name: 'Desserts', slug: 'desserts', recipe_count: 12 },
+  { id: '3', name: 'Breakfast', slug: 'breakfast', recipe_count: 0 },
+];
+---
+
+<AdminLayout title="Categories" activePage="categories">
+  <div class="header-actions">
+    <h2>Categories</h2>
+  </div>
+
+  <div class="layout-grid">
+    <div class="table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Slug</th>
+            <th>Recipes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {categories.map(cat => (
+            <tr>
+              <td class="name-cell">{cat.name}</td>
+              <td><code>{cat.slug}</code></td>
+              <td>{cat.recipe_count}</td>
+              <td>
+                {cat.recipe_count === 0 ? (
+                  <button class="btn-delete text-danger" data-id={cat.id}>Delete</button>
+                ) : (
+                  <span class="text-muted">In use</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="form-container">
+      <h3>Add Category</h3>
+      <form id="add-category-form">
+        <div class="form-group">
+          <label for="name">Category Name</label>
+          <input type="text" id="name" name="name" required class="form-control" />
+        </div>
+        <button type="submit" class="btn-primary">Add Category</button>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .header-actions { margin-bottom: 2rem; }
+  .header-actions h2 { margin: 0; }
+  
+  .layout-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 2rem;
+  }
+  
+  .table-container {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+  .admin-table th, .admin-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e4e4e7;
+  }
+  .admin-table th {
+    background-color: #f4f4f5;
+    font-weight: 500;
+    color: #3f3f46;
+  }
+  .admin-table tr:last-child td { border-bottom: none; }
+  
+  .name-cell { font-weight: 500; }
+  code { background: #f4f4f5; padding: 0.125rem 0.25rem; border-radius: 4px; font-size: 0.875rem; }
+  
+  .btn-delete {
+    background: none; border: none; cursor: pointer; padding: 0;
+    font-weight: 500;
+  }
+  .btn-delete:hover { text-decoration: underline; }
+  .text-danger { color: #dc2626; }
+  .text-muted { color: #a1a1aa; font-size: 0.875rem; }
+  
+  .form-container {
+    background: white;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 1.5rem;
+    align-self: start;
+  }
+  .form-container h3 { margin-top: 0; margin-bottom: 1rem; }
+  
+  .form-group { margin-bottom: 1rem; }
+  .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+  .form-control {
+    width: 100%; padding: 0.75rem; border: 1px solid #d4d4d8; border-radius: 4px; box-sizing: border-box;
+  }
+  
+  .btn-primary {
+    background-color: #18181b; color: white; padding: 0.75rem 1rem; border: none; border-radius: 4px;
+    font-weight: 500; cursor: pointer; width: 100%;
+  }
+  .btn-primary:hover { background-color: #27272a; }
+</style>
+
+<script>
+  document.getElementById('add-category-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    alert('Mock: Category added');
+  });
+  
+  document.querySelectorAll('.btn-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if(confirm('Are you sure?')) alert('Mock: Category deleted');
+    });
+  });
+</script>

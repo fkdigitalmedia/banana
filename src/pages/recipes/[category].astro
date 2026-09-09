@@ -1,0 +1,168 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import RecipeCard from '../../components/RecipeCard.astro';
+import Breadcrumbs from '../../components/Breadcrumbs.astro';
+import { getCategoryBySlug, getPublishedRecipesByCategory, getCategories } from '../../lib/db/recipes';
+
+const { category: categorySlug } = Astro.params;
+const cleanSlug = (categorySlug || '').replace(/^\/+|\/+$/g, '');
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+
+if (!cleanSlug || !db) {
+  return Astro.redirect('/404');
+}
+
+const [category, allCategories] = await Promise.all([
+  getCategoryBySlug(db, cleanSlug),
+  getCategories(db)
+]);
+
+if (!category) {
+  return Astro.redirect('/404');
+}
+
+const recipes = await getPublishedRecipesByCategory(db, cleanSlug, 24);
+
+const title = `${category.name} Recipes — Tested Homemade ${category.name}`;
+const description = category.description || `Explore our tested collection of delicious homemade ${category.name.toLowerCase()} recipes.`;
+const canonical = `${siteUrl.replace(/\/+$/, '')}/recipes/${category.slug}/`;
+---
+
+<BaseLayout title={title} description={description} canonical={canonical}>
+  <div class="container page-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'All Recipes', href: '/recipes/' },
+      { label: category.name }
+    ]} />
+
+    <header class="category-header">
+      <span class="category-tag">Recipe Category</span>
+      <h1>{category.name} Recipes</h1>
+      <p>{description}</p>
+
+      {allCategories.length > 0 && (
+        <div class="category-pills">
+          <a href="/recipes/" class="category-pill">All Recipes</a>
+          {allCategories.map((cat: any) => (
+            <a 
+              href={`/recipes/${cat.slug}/`} 
+              class={`category-pill ${cat.slug === cleanSlug ? 'active' : ''}`}
+            >
+              {cat.name}
+            </a>
+          ))}
+        </div>
+      )}
+    </header>
+
+    {recipes.length === 0 ? (
+      <div class="empty-state">
+        <span class="empty-icon">🥣</span>
+        <h2>No recipes in {category.name} yet</h2>
+        <p>Our bakers are currently working on new {category.name.toLowerCase()} recipes. Browse our full catalog in the meantime!</p>
+        <a href="/recipes/" class="btn-home">← View All Recipes</a>
+      </div>
+    ) : (
+      <div class="recipe-grid">
+        {recipes.map((recipe) => (
+          <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+        ))}
+      </div>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  .page-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 5rem 1rem;
+  }
+  
+  .category-header {
+    text-align: center;
+    margin: 1.5rem auto 3rem auto;
+    max-width: 750px;
+  }
+  .category-tag {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .category-header h1 {
+    font-family: 'Georgia', serif;
+    font-size: 2.75rem;
+    color: var(--text-primary);
+    margin: 0 0 0.75rem 0;
+  }
+  .category-header p {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 0 auto 1.75rem auto;
+    line-height: 1.5;
+  }
+
+  .category-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    justify-content: center;
+  }
+  .category-pill {
+    padding: 0.45rem 1.1rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.15s ease-in-out;
+  }
+  .category-pill:hover,
+  .category-pill.active {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  
+  .recipe-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background-color: var(--surface);
+    border-radius: 12px;
+    border: 1px dashed var(--border);
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .empty-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+  .empty-state h2 { font-family: 'Georgia', serif; color: var(--primary); margin: 0 0 0.5rem 0; }
+  .empty-state p { color: var(--text-secondary); margin: 0 0 1.5rem 0; font-size: 1.05rem; }
+  .btn-home {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    padding: 0.65rem 1.25rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+  }
+</style>

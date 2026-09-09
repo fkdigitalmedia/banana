@@ -1,0 +1,161 @@
+---
+interface Ingredient {
+  quantity?: string;
+  unit?: string;
+  name: string;
+  notes?: string;
+}
+
+interface Props {
+  ingredients: Ingredient[];
+  servings?: number;
+}
+
+const { ingredients, servings } = Astro.props;
+---
+
+<section class="recipe-ingredients">
+  <div class="ingredients-header">
+    <h2>Ingredients</h2>
+    {servings && <span class="yield">Yields: {servings} servings</span>}
+  </div>
+  
+  <ul class="ingredients-list">
+    {ingredients.map((ing, idx) => (
+      <li class="ingredient-item">
+        <label class="ingredient-label">
+          <input type="checkbox" class="ingredient-checkbox" id={`ing-${idx}`} />
+          <span class="checkmark"></span>
+          <span class="ingredient-text">
+            {ing.quantity && <span class="quantity">{ing.quantity}</span>}
+            {ing.unit && <span class="unit">{ing.unit}</span>}
+            <strong class="name">{ing.name}</strong>
+            {ing.notes && <em class="notes">, {ing.notes}</em>}
+          </span>
+        </label>
+      </li>
+    ))}
+  </ul>
+</section>
+
+<script>
+  // Simple script to save checked state in localStorage for this recipe
+  const checkboxes = document.querySelectorAll('.ingredient-checkbox');
+  const path = window.location.pathname;
+  
+  checkboxes.forEach((cb: HTMLInputElement) => {
+    const key = `recipe-cb-${path}-${cb.id}`;
+    if (localStorage.getItem(key) === 'true') {
+      cb.checked = true;
+    }
+    
+    cb.addEventListener('change', () => {
+      localStorage.setItem(key, cb.checked.toString());
+    });
+  });
+</script>
+
+<style>
+  .recipe-ingredients {
+    background-color: var(--surface);
+    padding: 2rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+    border: 1px solid var(--border);
+  }
+  
+  .ingredients-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+  }
+  
+  .yield {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+  
+  .ingredients-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .ingredient-item {
+    margin-bottom: 0.75rem;
+  }
+  
+  .ingredient-label {
+    display: flex;
+    align-items: flex-start;
+    cursor: pointer;
+    position: relative;
+    padding-left: 35px;
+    line-height: 1.4;
+  }
+  
+  .ingredient-checkbox {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+  }
+  
+  .checkmark {
+    position: absolute;
+    top: 2px;
+    left: 0;
+    height: 20px;
+    width: 20px;
+    background-color: #fff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  
+  .ingredient-label:hover input ~ .checkmark {
+    background-color: #f0e6d2;
+  }
+  
+  .ingredient-label input:checked ~ .checkmark {
+    background-color: var(--primary);
+    border-color: var(--primary);
+  }
+  
+  .checkmark:after {
+    content: "";
+    position: absolute;
+    display: none;
+  }
+  
+  .ingredient-label input:checked ~ .checkmark:after {
+    display: block;
+  }
+  
+  .ingredient-label .checkmark:after {
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  
+  .ingredient-label input:checked ~ .ingredient-text {
+    opacity: 0.6;
+    text-decoration: line-through;
+  }
+  
+  .ingredient-text {
+    transition: all 0.2s;
+  }
+  
+  .quantity, .unit {
+    margin-right: 0.25rem;
+  }
+</style>

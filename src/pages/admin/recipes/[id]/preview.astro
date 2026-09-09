@@ -1,0 +1,355 @@
+---
+export const prerender = false;
+
+import RecipeLayout from '../../../../layouts/RecipeLayout.astro';
+import Breadcrumbs from '../../../../components/Breadcrumbs.astro';
+import RecipeHero from '../../../../components/RecipeHero.astro';
+import RecipeMeta from '../../../../components/RecipeMeta.astro';
+import RecipeIngredients from '../../../../components/RecipeIngredients.astro';
+import RecipeInstructions from '../../../../components/RecipeInstructions.astro';
+import RecipeTips from '../../../../components/RecipeTips.astro';
+import RecipeFAQ from '../../../../components/RecipeFAQ.astro';
+import RelatedRecipes from '../../../../components/RelatedRecipes.astro';
+import { getRecipeById } from '../../../../lib/db/recipes';
+import { getDeterministicRelatedRecipes } from '../../../../lib/seo/linking';
+import { generateRecipeJsonLd } from '../../../../lib/seo/jsonld';
+import { generateMeta } from '../../../../lib/seo/meta';
+
+const { id } = Astro.params;
+const recipeId = parseInt(id || '0', 10);
+
+const env = Astro.locals.runtime?.env;
+const db = env?.DB;
+const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+
+if (!recipeId || !db) {
+  return Astro.redirect('/admin/recipes/');
+}
+
+// Fetch full recipe from D1
+const recipe = await getRecipeById(db, recipeId);
+
+if (!recipe) {
+  return Astro.redirect('/404');
+}
+
+const content = recipe.content || {};
+const seo = recipe.seo || {};
+
+// Fetch related published recipes
+const relatedRecipes = await getDeterministicRelatedRecipes(db, recipe.id, 6);
+
+// Parse structured guidance & content
+let ingredientGuidance: { ingredient: string; guidance: string }[] = [];
+if (content.ingredient_guidance) {
+  try {
+    ingredientGuidance = typeof content.ingredient_guidance === 'string'
+      ? JSON.parse(content.ingredient_guidance)
+      : content.ingredient_guidance;
+  } catch {}
+}
+
+let cookingGuidance: string[] = [];
+if (content.cooking_guidance) {
+  try {
+    cookingGuidance = typeof content.cooking_guidance === 'string'
+      ? JSON.parse(content.cooking_guidance)
+      : content.cooking_guidance;
+  } catch {}
+}
+
+let tips: string[] = [];
+if (content.tips) {
+  try {
+    tips = typeof content.tips === 'string' ? JSON.parse(content.tips) : content.tips;
+  } catch {}
+}
+
+let variations: { name: string; description: string }[] = [];
+if (content.variations) {
+  try {
+    variations = typeof content.variations === 'string'
+      ? JSON.parse(content.variations)
+      : content.variations;
+  } catch {}
+}
+
+let faq: { question: string; answer: string }[] = [];
+if (content.faq) {
+  try {
+    faq = typeof content.faq === 'string' ? JSON.parse(content.faq) : content.faq;
+  } catch {}
+}
+
+// Generate JSON-LD Schema
+const jsonLd = generateRecipeJsonLd(
+  recipe,
+  recipe.ingredients || [],
+  recipe.instructions || [],
+  content,
+  seo,
+  siteUrl,
+  r2BaseUrl
+);
+
+// Generate Meta tags
+const meta = generateMeta(recipe, seo, siteUrl, r2BaseUrl);
+
+// Enforce non-indexability on preview
+Astro.response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Recipes', href: '/recipes/' },
+  { label: recipe.title }
+];
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>[Preview] {recipe.title}</title>
+  <style>
+    .preview-bar {
+      position: sticky;
+      top: 0;
+      z-index: 9999;
+      background: #18181b;
+      color: #fff;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.875rem;
+    }
+    .preview-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .preview-tag {
+      background: #eab308;
+      color: #000;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+    .preview-status {
+      font-weight: 600;
+      color: #a1a1aa;
+    }
+    .preview-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .btn-bar-back {
+      color: #e4e4e7;
+      text-decoration: none;
+      font-weight: 500;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+    }
+    .btn-bar-back:hover {
+      background: #27272a;
+    }
+    .btn-bar-approve {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 0.4rem 1rem;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-bar-approve:hover {
+      background: #1d4ed8;
+    }
+  </style>
+</head>
+<body>
+  <!-- Admin Preview Notification Bar -->
+  <div class="preview-bar">
+    <div class="preview-info">
+      <span class="preview-tag">EDITORIAL PREVIEW</span>
+      <span class="preview-status">Status: <strong>{recipe.status}</strong></span>
+      <span>Quality: <strong>{recipe.quality_score || 0}/100</strong></span>
+      {recipe.content_stale ? <span style="color:#ef4444; font-weight:700;">⚠ CONTENT STALE</span> : null}
+    </div>
+    <div class="preview-actions">
+      <a href={`/admin/recipes/${recipe.id}/review/`} class="btn-bar-back">← Back to Review</a>
+      {recipe.status !== 'APPROVED' && recipe.status !== 'PUBLISHED' && (
+        <button id="quick-approve-btn" class="btn-bar-approve">Approve Recipe</button>
+      )}
+    </div>
+  </div>
+
+  <!-- Identical Public Recipe Layout & Styling -->
+  <RecipeLayout
+    title={meta.title}
+    description={meta.description}
+    canonical={meta.canonical}
+    og={meta.og}
+    jsonLd={jsonLd}
+    recipe={recipe}
+  >
+    <div class="recipe-container">
+      <Breadcrumbs items={breadcrumbs} />
+
+      <RecipeHero
+        title={recipe.title}
+        description={recipe.description}
+        heroImageKey={recipe.hero_image_key}
+        r2BaseUrl={r2BaseUrl}
+      />
+
+      <RecipeMeta
+        prepTime={recipe.prep_time}
+        cookTime={recipe.cook_time}
+        totalTime={recipe.total_time}
+        servings={recipe.servings}
+        cuisine={recipe.cuisine}
+        category={recipe.category_name}
+      />
+
+      {content.introduction && (
+        <section class="recipe-section introduction-section">
+          <p class="recipe-intro-text">{content.introduction}</p>
+        </section>
+      )}
+
+      {content.why_this_recipe && (
+        <section class="recipe-section why-recipe-section">
+          <h2>Why You'll Love This Recipe</h2>
+          <div class="why-text">{content.why_this_recipe}</div>
+        </section>
+      )}
+
+      {ingredientGuidance.length > 0 && (
+        <section class="recipe-section guidance-section">
+          <h2>Key Ingredients & Guidance</h2>
+          <div class="guidance-grid">
+            {ingredientGuidance.map((item) => (
+              <div class="guidance-card">
+                <h3>{item.ingredient}</h3>
+                <p>{item.guidance}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {recipe.ingredients && recipe.ingredients.length > 0 && (
+        <section class="recipe-section ingredients-section" id="ingredients">
+          <h2>Ingredients</h2>
+          <RecipeIngredients ingredients={recipe.ingredients} servings={recipe.servings} />
+        </section>
+      )}
+
+      {cookingGuidance.length > 0 && (
+        <section class="recipe-section cooking-guidance-section">
+          <h2>Step-by-Step Cooking Notes</h2>
+          <ul class="cooking-guidance-list">
+            {cookingGuidance.map((note) => (
+              <li>{note}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {recipe.instructions && recipe.instructions.length > 0 && (
+        <section class="recipe-section instructions-section" id="instructions">
+          <h2>Instructions</h2>
+          <RecipeInstructions instructions={recipe.instructions} />
+        </section>
+      )}
+
+      {tips.length > 0 && (
+        <section class="recipe-section tips-section">
+          <h2>Baker's Tips for Success</h2>
+          <RecipeTips tips={tips} />
+        </section>
+      )}
+
+      {variations.length > 0 && (
+        <section class="recipe-section variations-section">
+          <h2>Delicious Variations</h2>
+          <div class="variations-grid">
+            {variations.map((v) => (
+              <div class="variation-card">
+                <h3>{v.name}</h3>
+                <p>{v.description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {content.serving_suggestions && (
+        <section class="recipe-section serving-section">
+          <h2>Serving Suggestions</h2>
+          <p>{content.serving_suggestions}</p>
+        </section>
+      )}
+
+      {content.storage && (
+        <section class="recipe-section storage-section">
+          <h2>Storage & Freezing</h2>
+          <p>{content.storage}</p>
+        </section>
+      )}
+
+      {faq.length > 0 && (
+        <section class="recipe-section faq-section">
+          <h2>Frequently Asked Questions</h2>
+          <RecipeFAQ faq={faq} />
+        </section>
+      )}
+
+      {relatedRecipes.length > 0 && (
+        <section class="recipe-section related-section">
+          <RelatedRecipes recipes={relatedRecipes} r2BaseUrl={r2BaseUrl} />
+        </section>
+      )}
+    </div>
+  </RecipeLayout>
+
+  <script define:vars={{ recipeId }}>
+    const btn = document.getElementById('quick-approve-btn');
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Validating...';
+        try {
+          const res = await fetch('/api/editorial/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('Recipe approved successfully!');
+            window.location.reload();
+          } else {
+            alert('Approval blocked: ' + (data.error || 'Failed validation'));
+            btn.disabled = false;
+            btn.textContent = 'Approve Recipe';
+          }
+        } catch (e) {
+          alert('Network error while approving recipe.');
+          btn.disabled = false;
+          btn.textContent = 'Approve Recipe';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

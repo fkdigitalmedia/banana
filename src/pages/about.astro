@@ -1,0 +1,121 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+
+const title = "About BananaBread — Independent Recipe Publication";
+const description = "Learn about BananaBread, our editorial standards, recipe standardization methodology, and commitment to clear, dependable baking and cooking guides.";
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container page-container">
+    <Breadcrumbs items={[
+      { label: 'Home', href: '/' },
+      { label: 'About' }
+    ]} />
+
+    <article class="about-content prose">
+      <h1>About BananaBread</h1>
+      
+      <p class="lead">BananaBread is an independent digital recipe publication focused on practical, dependable baking and home cooking guides.</p>
+      
+      <div class="about-hero-banner">
+        <span class="about-icon">🥖 🍌 🍰</span>
+        <p class="about-quote">Clear measurements, reliable oven temperatures, and step-by-step culinary guidance designed for home cooks who value consistency.</p>
+      </div>
+      
+      <h2>Editorial Purpose</h2>
+      <p>Finding a recipe online often means wading through thousands of words of personal anecdotes, distracting filler, and unreliable measurements. BananaBread was built to offer a clean, distraction-free alternative: thoroughly structured recipes that get straight to the cooking process, accompanied by genuinely useful technique tips and science-based kitchen advice.</p>
+      
+      <h2>How Our Recipes Are Prepared & Reviewed</h2>
+      <p>Every recipe published on BananaBread undergoes a structured editorial workflow to ensure accuracy and kitchen reliability:</p>
+      <ul>
+        <li><strong>Measurement Standardization:</strong> Ingredient quantities are standardized into clear, unambiguous units with exact weight and volume specifications where applicable.</li>
+        <li><strong>Temperature & Timing Verification:</strong> Oven temperatures and cooking durations are cross-referenced and verified to prevent contradictory or conflicting instructions.</li>
+        <li><strong>Factual Consistency:</strong> We verify that every ingredient listed in the ingredient card is accounted for in the preparation steps, and that procedural notes (such as room-temperature butter or sifted flour) are clearly communicated.</li>
+        <li><strong>Practical Troubleshooting:</strong> Each recipe includes specific culinary notes covering visual doneness cues, storage recommendations, freezing guidance, and realistic ingredient substitutions.</li>
+        <li><strong>Editorial Review:</strong> Before a recipe is published to the public catalog, it is reviewed for clarity, formatting, accessibility, and nutritional transparency.</li>
+      </ul>
+
+      <h2>What Readers Can Expect</h2>
+      <ul>
+        <li><strong>No Fabricated Reviews:</strong> We never generate fake ratings, artificial star reviews, or synthetic reader comments.</li>
+        <li><strong>Fast, Accessible Navigation:</strong> Prominent "Jump to Recipe" buttons, scannable ingredient checklists, and clear step-by-step instructions that work seamlessly on mobile screens in the kitchen.</li>
+        <li><strong>Printer-Friendly Format:</strong> Clean, optimized print layouts that save ink and fit neatly on standard paper without unnecessary web clutter.</li>
+      </ul>
+
+      <h2>Editorial Inquiries & Corrections</h2>
+      <p>Have feedback on a recipe, noticed a typo, or want to suggest a technique tip? We welcome reader feedback and continually refine our published guides. Visit our <a href="/contact/">Contact Page</a> to get in touch with our editorial team.</p>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-container {
+    padding: 2rem 1rem;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  .prose h1 {
+    font-size: 2.5rem;
+    color: var(--primary);
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+  
+  .lead {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  
+  .about-hero-banner {
+    background: linear-gradient(135deg, #FFF8F0 0%, #FDE8D3 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2.5rem 2rem;
+    margin-bottom: 3rem;
+    text-align: center;
+  }
+  .about-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+  .about-quote {
+    font-family: 'Georgia', serif;
+    font-style: italic;
+    color: var(--text-secondary);
+    font-size: 1.15rem;
+    line-height: 1.6;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  
+  .prose h2 {
+    color: var(--primary);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+  }
+  
+  .prose p {
+    font-size: 1.125rem;
+    line-height: 1.8;
+    margin-bottom: 1.5rem;
+  }
+  
+  .prose ul {
+    margin-bottom: 2rem;
+    padding-left: 1.5rem;
+  }
+  
+  .prose li {
+    font-size: 1.125rem;
+    margin-bottom: 0.75rem;
+    line-height: 1.6;
+  }
+
+  .prose a {
+    color: var(--primary);
+    text-decoration: underline;
+    font-weight: 500;
+  }
+</style>
