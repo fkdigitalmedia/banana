@@ -11,3 +11,4 @@ export * from './robots';
 export * from './redirects';
 export * from './internal-links';
 export * from './validation';
+export * from './indexnow';

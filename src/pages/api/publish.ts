@@ -118,6 +118,15 @@ export const POST: APIRoute = async (context) => {
     await recordRevision(db, recipe.id, 'PUBLISHED', 'admin', 'Recipe published to live website');
     await invalidateRelatedCache(db);
 
+    // Auto-ping IndexNow search engines (Bing, Yandex, Seznam)
+    const recipeUrl = `${siteUrl.replace(/\/$/, '')}/recipes/${recipe.slug}/`;
+    try {
+      const { submitToIndexNow } = await import('../../lib/seo/indexnow');
+      await submitToIndexNow(siteUrl, [recipeUrl, `${siteUrl.replace(/\/$/, '')}/`]);
+    } catch (indexNowErr) {
+      console.warn('[Publish API] IndexNow notification notice:', indexNowErr);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       recipeId: recipe.id,

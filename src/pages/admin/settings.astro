@@ -105,6 +105,22 @@ const siteUrl = env.SITE_URL || 'https://yoursite.com';
         <p class="card-desc">Customize the recipe author name, title, bio, avatar image, and social media channels (Instagram, Pinterest, YouTube, Facebook, etc.) shown on recipe articles and Google Schema.org SEO.</p>
       </div>
 
+      <!-- IndexNow Protocol Card -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="margin: 0;">⚡ IndexNow Search Engine Submission</h3>
+          <button type="button" id="btn-ping-indexnow" class="settings-action-btn" style="border: none; cursor: pointer;">
+            🚀 Ping IndexNow (All URLs)
+          </button>
+        </div>
+        <p class="card-desc">Automatically notifies Bing, Yandex, Seznam, and partner search engines instantly whenever new recipes are published or updated.</p>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.85rem; color: #475569;">
+          <strong>API Key:</strong> <code style="font-family: monospace; background: #e2e8f0; padding: 0.15rem 0.4rem; border-radius: 4px;">fdaae3f296be4b85b8728643b9fcc152</code><br />
+          <strong>Key Location:</strong> <a href="/fdaae3f296be4b85b8728643b9fcc152.txt" target="_blank" style="color: #8b4513; text-decoration: underline;">/fdaae3f296be4b85b8728643b9fcc152.txt</a>
+        </div>
+        <div id="indexnow-status" style="margin-top: 0.75rem; font-size: 0.85rem; display: none;"></div>
+      </div>
+
       <!-- Environment Setup Helper -->
       <div class="card">
         <h3>Configuration & Secrets Guide</h3>
@@ -130,6 +146,42 @@ SITE_URL="https://yourdomain.com"</code></pre>
     </div>
   </div>
 </AdminLayout>
+
+<script>
+  const btnPing = document.getElementById('btn-ping-indexnow');
+  const statusDiv = document.getElementById('indexnow-status');
+  if (btnPing && statusDiv) {
+    btnPing.addEventListener('click', async () => {
+      btnPing.textContent = '⏳ Submitting to IndexNow...';
+      (btnPing as HTMLButtonElement).disabled = true;
+      statusDiv.style.display = 'block';
+      statusDiv.textContent = 'Sending URLs to IndexNow API...';
+      statusDiv.style.color = '#71717a';
+
+      try {
+        const res = await fetch('/api/admin/seo/indexnow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ all: true })
+        });
+        const data = await res.json();
+        if (data.success) {
+          statusDiv.textContent = `✓ ${data.message}`;
+          statusDiv.style.color = '#15803d';
+        } else {
+          statusDiv.textContent = `✗ ${data.error || data.message || 'Submission failed'}`;
+          statusDiv.style.color = '#dc2626';
+        }
+      } catch (err: any) {
+        statusDiv.textContent = `✗ Network error: ${err.message}`;
+        statusDiv.style.color = '#dc2626';
+      } finally {
+        btnPing.textContent = '🚀 Ping IndexNow (All URLs)';
+        (btnPing as HTMLButtonElement).disabled = false;
+      }
+    });
+  }
+</script>
 
 <style>
   .settings-container {
