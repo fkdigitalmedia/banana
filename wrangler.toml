@@ -12,7 +12,7 @@ binding = "RECIPE_IMAGES"
 bucket_name = "recipe-images"
 
 [vars]
-SITE_URL = "https://banana-recipe-blog.pages.dev"
+SITE_URL = "https://bananabreadrecipe.xyz"
 # Secrets to be set via `wrangler secret put <name>`:
 # DEEPSEEK_API_KEY
 # ADMIN_USERNAME

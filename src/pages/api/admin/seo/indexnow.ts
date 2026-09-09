@@ -1,4 +1,4 @@
-﻿import type { APIRoute } from 'astro';
+import type { APIRoute } from 'astro';
 import { submitToIndexNow, INDEXNOW_KEY } from '../../../../lib/seo/indexnow';
 import { listRecipes } from '../../../../lib/db/recipes';
 import { logger } from '../../../../lib/utils/logger';
@@ -14,7 +14,7 @@ export const POST: APIRoute = async (context) => {
     });
   }
 
-  const siteUrl = env.SITE_URL || 'https://banana-recipe-blog.pages.dev';
+  const siteUrl = env.SITE_URL || 'https://bananabreadrecipe.xyz';
   const cleanSiteUrl = siteUrl.replace(/\/$/, '');
 
   try {

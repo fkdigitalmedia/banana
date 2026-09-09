@@ -161,7 +161,7 @@ export async function importSourceRecipeImage(
     const response = await fetch(sourceImageUrl, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0; +https://banana-recipe-blog.pages.dev)',
+        'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0; +https://bananabreadrecipe.xyz)',
         'Accept': 'image/webp,image/avif,image/jpeg,image/png,*/*;q=0.8',
         'Referer': pageUrl
       }
@@ -486,7 +486,7 @@ export async function importAllSourceImages(
       const response = await fetch(img.url, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0; +https://banana-recipe-blog.pages.dev)',
+          'User-Agent': 'Mozilla/5.0 (compatible; RecipeBot/1.0; +https://bananabreadrecipe.xyz)',
           'Accept': 'image/webp,image/avif,image/jpeg,image/png,*/*;q=0.8',
           'Referer': pageUrl
         }
