@@ -18,6 +18,10 @@ interface Props {
 }
 
 const { title, description, canonical, noindex, og, jsonLd } = Astro.props;
+
+// Auto-apply noindex on *.pages.dev (e.g. banana-recipe-blog.pages.dev) to prevent duplicate indexing
+const isPagesDev = Astro.url.hostname.includes('pages.dev');
+const shouldNoIndex = Boolean(noindex || isPagesDev);
 ---
 
 <!DOCTYPE html>
@@ -27,7 +31,7 @@ const { title, description, canonical, noindex, og, jsonLd } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    {noindex ? (
+    {shouldNoIndex ? (
       <meta name="robots" content="noindex, nofollow" />
     ) : (
       <meta name="robots" content="index, follow" />

@@ -65,6 +65,11 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // Execute request
   const response = await next();
 
+  // If served on *.pages.dev (e.g. banana-recipe-blog.pages.dev), block indexing via X-Robots-Tag
+  if (url.hostname.includes('pages.dev')) {
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  }
+
   // Attach standard security headers to outgoing responses
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'SAMEORIGIN');
