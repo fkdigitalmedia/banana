@@ -35,6 +35,20 @@ const { title, description, canonical, noindex, og, jsonLd } = Astro.props;
     {canonical && <link rel="canonical" href={canonical} />}
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     
+    <!-- Search Engine & Webmaster Verifications -->
+    <meta name="google-site-verification" content="HPTMJfRfY1qGv8AOVPmzx3dLVOlyz3CIFfxfHdAxnPE" />
+    <meta name="msvalidate.01" content="2A730A2FAF8DA672C0BDBCC548BEB4FA" />
+
+    <!-- Google tag (gtag.js) -->
+    <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-Q05X4J7M9S"></script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-Q05X4J7M9S');
+    </script>
+    
     <!-- Open Graph -->
     {og && (
       <>
