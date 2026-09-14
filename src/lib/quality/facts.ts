@@ -212,28 +212,46 @@ export function checkFactConsistency(
   for (const ing of locked.ingredients) {
     if (!ing.quantity || !ing.name || ing.name.length < 3) continue;
 
-    const ingNoun = ing.name.toLowerCase().split(/\s+/).pop() || ing.name.toLowerCase();
-    const qtyRegex = new RegExp(`(\\d+(?:\\/\\d+|\\.\\d+)?)\\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|lbs?|ounces?|grams?)?\\s*(?:of\\s+)?(?:${ingNoun})`, 'gi');
+    // Strip parentheticals like (divided), (optional) and non-alphanumeric punctuation
+    const cleanName = ing.name
+      .toLowerCase()
+      .replace(/\(.*?\)/g, ' ')
+      .replace(/\[.*?\]/g, ' ')
+      .replace(/[^a-z0-9\s-]/gi, ' ')
+      .trim();
 
-    const proseText = [
-      typeof content.introduction === 'string' ? content.introduction : String(content.introduction || ''),
-      ...(Array.isArray(content.cookingGuidance) ? content.cookingGuidance : [String(content.cookingGuidance || '')]),
-      ...(Array.isArray(content.tips) ? content.tips : [String(content.tips || '')])
-    ].join(' ');
+    const words = cleanName.split(/\s+/).filter(w => w.length >= 3 && !/^\d+$/.test(w));
+    const ingNoun = words.pop();
+    if (!ingNoun) continue;
 
-    const foundQuantities = typeof proseText.matchAll === 'function' ? proseText.matchAll(qtyRegex) : [];
-    for (const match of foundQuantities) {
-      const foundQtyStr = match[1];
-      if (foundQtyStr !== ing.quantity && !ing.quantity.includes(foundQtyStr)) {
-        // High severity if it states a clearly conflicting amount (e.g. 3 cups flour when locked is 2 cups)
-        issues.push({
-          type: 'QUANTITY_CONSISTENCY',
-          severity: 'HIGH',
-          message: `Generated text claims "${match[0]}", contradicting the locked ingredient quantity of "${ing.quantity} ${ing.unit || ''} ${ing.name}".`,
-          expected: `${ing.quantity} ${ing.unit || ''} ${ing.name}`,
-          found: match[0]
-        });
+    const escapedNoun = ingNoun.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    try {
+      const qtyRegex = new RegExp(`(\\d+(?:\\/\\d+|\\.\\d+)?)\\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|lbs?|ounces?|grams?)?\\s*(?:of\\s+)?(?:${escapedNoun})`, 'gi');
+
+      const proseText = [
+        typeof content.introduction === 'string' ? content.introduction : String(content.introduction || ''),
+        ...(Array.isArray(content.cookingGuidance) ? content.cookingGuidance : [String(content.cookingGuidance || '')]),
+        ...(Array.isArray(content.tips) ? content.tips : [String(content.tips || '')])
+      ].join(' ');
+
+      const foundQuantities = typeof proseText.matchAll === 'function' ? proseText.matchAll(qtyRegex) : [];
+      for (const match of foundQuantities) {
+        const foundQtyStr = match[1];
+        if (foundQtyStr !== ing.quantity && !ing.quantity.includes(foundQtyStr)) {
+          // High severity if it states a clearly conflicting amount (e.g. 3 cups flour when locked is 2 cups)
+          issues.push({
+            type: 'QUANTITY_CONSISTENCY',
+            severity: 'HIGH',
+            message: `Generated text claims "${match[0]}", contradicting the locked ingredient quantity of "${ing.quantity} ${ing.unit || ''} ${ing.name}".`,
+            expected: `${ing.quantity} ${ing.unit || ''} ${ing.name}`,
+            found: match[0]
+          });
+        }
       }
+    } catch {
+      // Gracefully continue on any regex parsing edge case
+      continue;
     }
   }
 
