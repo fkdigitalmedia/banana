@@ -511,6 +511,21 @@ if (content.faq) {
               </div>
             )}
           </div>
+
+          <!-- 3. Upload Custom Photo -->
+          <div class="img-option-card">
+            <div class="option-header">
+              <span class="option-title">📤 Upload Photo</span>
+              <span class="status-pill status-draft">MANUAL</span>
+            </div>
+            <div class="option-empty">
+              <p class="text-sm text-muted">Upload your own photo (JPG, PNG, WebP, GIF — max 10 MB). It is stored in R2 and becomes the active hero image instantly.</p>
+              <input type="file" id="hero-upload-input" accept="image/jpeg,image/png,image/webp,image/gif" class="form-control" style="margin-bottom: 0.6rem;" />
+              <button type="button" id="btn-upload-hero-img" class="btn btn-primary btn-sm" data-id={recipe.id}>
+                ⬆️ Upload & Set as Hero
+              </button>
+            </div>
+          </div>
         </div>
 
         {inArticleImages.length > 0 && (
@@ -2195,5 +2210,47 @@ if (content.faq) {
         target.textContent = '✨ Generate AI Image';
       }
     });
+  });
+
+  // Manual photo upload -> R2, set as active hero
+  const btnUploadHero = document.getElementById('btn-upload-hero-img') as HTMLButtonElement | null;
+  const heroUploadInput = document.getElementById('hero-upload-input') as HTMLInputElement | null;
+  btnUploadHero?.addEventListener('click', async () => {
+    const file = heroUploadInput?.files?.[0];
+    if (!file) {
+      showToast('Please choose an image file first.', true);
+      return;
+    }
+    const okTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!okTypes.includes(file.type)) {
+      showToast('Only JPG, PNG, WebP or GIF images are allowed.', true);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Image must be smaller than 10 MB.', true);
+      return;
+    }
+    btnUploadHero.disabled = true;
+    btnUploadHero.textContent = '⏳ Uploading...';
+    try {
+      showToast('Uploading photo to Cloudflare R2... 📤');
+      const fd = new FormData();
+      fd.append('recipeId', String(recipeId));
+      fd.append('image', file, file.name);
+      const res = await fetch('/api/recipes/upload-image', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        showToast('Photo uploaded and set as hero image! 📸');
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        showToast(data?.error || 'Image upload failed.', true);
+        btnUploadHero.disabled = false;
+        btnUploadHero.textContent = '⬆️ Upload & Set as Hero';
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Network error.', true);
+      btnUploadHero.disabled = false;
+      btnUploadHero.textContent = '⬆️ Upload & Set as Hero';
+    }
   });
 </script>
