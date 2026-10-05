@@ -6,7 +6,7 @@ export const prerender = false;
 export const POST: APIRoute = async (context) => {
   try {
     const body = await context.request.json().catch(() => null);
-    const { recipeId, title, slug, description, category_id, cuisine, servings, prep_time, cook_time, total_time, content, seo } = body || {};
+    const { recipeId, title, slug, description, category_id, cuisine, servings, prep_time, cook_time, total_time } = body || {};
 
     if (!recipeId) {
       return new Response(JSON.stringify({ success: false, error: 'Missing recipeId in request body.' }), {
