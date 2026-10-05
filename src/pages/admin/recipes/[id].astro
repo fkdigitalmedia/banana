@@ -1799,10 +1799,25 @@ if (content.faq) {
     }
   });
 
-  // Publish
+  // Publish (two-step inline confirm — no native dialog, automation-friendly)
   const btnPublish = document.getElementById('btn-publish') as HTMLButtonElement;
+  let publishArmed = false;
+  let publishArmTimer: ReturnType<typeof setTimeout> | null = null;
+  function disarmPublish() {
+    publishArmed = false;
+    if (publishArmTimer) { clearTimeout(publishArmTimer); publishArmTimer = null; }
+    btnPublish.disabled = false;
+    btnPublish.textContent = '🚀 Publish Recipe';
+  }
   btnPublish?.addEventListener('click', async () => {
-    if (!confirm('Publish this recipe? It will become live and publicly indexable on the website.')) return;
+    if (!publishArmed) {
+      publishArmed = true;
+      btnPublish.textContent = '⚠️ Confirm Publish?';
+      showToast('Click "Confirm Publish" again to make the recipe live.');
+      publishArmTimer = setTimeout(disarmPublish, 8000);
+      return;
+    }
+    if (publishArmTimer) { clearTimeout(publishArmTimer); publishArmTimer = null; }
     btnPublish.disabled = true;
     btnPublish.textContent = 'Publishing...';
     try {
@@ -1821,8 +1836,7 @@ if (content.faq) {
     } catch (e: any) {
       showToast(e.message, true);
     } finally {
-      btnPublish.disabled = false;
-      btnPublish.textContent = '🚀 Publish Recipe';
+      disarmPublish();
     }
   });
 
