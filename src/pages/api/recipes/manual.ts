@@ -164,7 +164,7 @@ export const POST: APIRoute = async (context) => {
     await upsertRecipeSeo(db, recipeId, {
       seo_title: title.slice(0, 60),
       meta_description: (description || `${title} — tested homemade recipe.`).slice(0, 160),
-      canonical_url: `/recipes/${slug}/`,
+      canonical_url: `/${slug}/`,
     });
 
     await recordRevision(db, recipeId, 'CONTENT_EDIT', 'admin', 'Recipe created manually via admin panel');

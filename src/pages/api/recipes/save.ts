@@ -35,17 +35,43 @@ export const POST: APIRoute = async (context) => {
       await updateRecipe(db, id, recipeUpdateData);
     }
 
-    // Update editorial content if provided
+    // Update editorial content if provided.
+    // Accepts either a nested `content` object OR flat field names as sent by
+    // the admin editor form (FormData serializes textareas as top-level keys).
+    const CONTENT_FIELDS = [
+      'introduction', 'why_this_recipe', 'ingredient_guidance', 'cooking_guidance',
+      'tips', 'variations', 'serving_suggestions', 'storage', 'faq',
+      'full_article', 'content_prompt_version',
+    ];
+    let content = body?.content;
+    if (!content) {
+      const flat: Record<string, any> = {};
+      let hasFlat = false;
+      for (const f of CONTENT_FIELDS) {
+        if (body?.[f] !== undefined) { flat[f] = body[f]; hasFlat = true; }
+      }
+      if (hasFlat) content = flat;
+    }
     if (content) {
       await upsertRecipeContent(db, id, content);
     }
 
-    // Update SEO metadata if provided
+    // Update SEO metadata if provided (nested `seo` object or flat fields).
+    const SEO_FIELDS = ['seo_title', 'meta_description', 'canonical_url'];
+    let seo = body?.seo;
+    if (!seo) {
+      const flat: Record<string, any> = {};
+      let hasFlat = false;
+      for (const f of SEO_FIELDS) {
+        if (body?.[f] !== undefined) { flat[f] = body[f]; hasFlat = true; }
+      }
+      if (hasFlat) seo = flat;
+    }
     if (seo) {
       await upsertRecipeSeo(db, id, {
         seo_title: seo.seo_title || title,
         meta_description: seo.meta_description || description,
-        canonical_url: seo.canonical_url || `/recipes/${slug || ''}/`
+        canonical_url: seo.canonical_url || `/${slug || ''}/`
       });
     }
 

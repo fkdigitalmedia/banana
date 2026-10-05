@@ -178,7 +178,7 @@ export async function runGenerationPipeline(
     await upsertRecipeSeo(db, recipeId, {
       seo_title: content.seo.title,
       meta_description: content.seo.metaDescription,
-      canonical_url: recipeData.source_url || `/recipes/${content.seo.slug}/`
+      canonical_url: recipeData.source_url || `/${content.seo.slug || recipeData.slug}/`
     });
 
     // Update recipe slug and description if improved by SEO
