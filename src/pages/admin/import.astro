@@ -2,11 +2,12 @@
 export const prerender = false;
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { PIPELINE_STAGE_LABELS, FULL_PIPELINE_ORDER } from '../../lib/pipeline/stages';
-import { listRecentGenerationJobs } from '../../lib/db/recipes';
+import { listRecentGenerationJobs, getCategories } from '../../lib/db/recipes';
 
 const env = Astro.locals.runtime.env;
 const db = env?.DB;
 const recentJobs = db ? await listRecentGenerationJobs(db, 15) : [];
+const categories = db ? await getCategories(db) : [];
 ---
 
 <AdminLayout title="Recipe Import & Generation" activePage="import">
@@ -27,6 +28,7 @@ const recentJobs = db ? await listRecentGenerationJobs(db, 15) : [];
       <div class="import-tabs">
         <button type="button" id="tab-bulk" class="tab-btn active">📋 Bulk URL Queue</button>
         <button type="button" id="tab-single" class="tab-btn">⚡ Single Recipe Import</button>
+        <button type="button" id="tab-manual" class="tab-btn">✍️ Manual Entry</button>
       </div>
     </div>
 
@@ -262,6 +264,107 @@ const recentJobs = db ? await listRecentGenerationJobs(db, 15) : [];
     </div>
 
     <!-- ========================================================= -->
+    <!-- TAB 3: MANUAL RECIPE ENTRY -->
+    <!-- ========================================================= -->
+    <div id="section-manual" class="tab-content">
+      <div class="callout-banner">
+        <span class="callout-icon">✍️</span>
+        <div class="callout-body">
+          <strong>Manual entry:</strong> type (or paste) the recipe yourself — no source URL or AI pipeline needed.
+          The draft is created instantly and follows the normal <strong>Review → Approve → Publish</strong> flow,
+          including the quality and SEO gates. Hero image can be added later in the recipe editor (Media tab).
+        </div>
+      </div>
+
+      <div class="card form-card">
+        <form id="manual-recipe-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="manual-title">Recipe Title *</label>
+              <input type="text" id="manual-title" name="title" class="form-control" placeholder="Cinnamon Swirl Banana Bread" required minlength="3" />
+            </div>
+            <div class="form-group">
+              <label for="manual-slug">URL Slug <span class="field-hint-inline">(auto-generated, editable)</span></label>
+              <input type="text" id="manual-slug" name="slug" class="form-control font-mono" placeholder="cinnamon-swirl-banana-bread" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="manual-description">Short Description</label>
+            <textarea id="manual-description" name="description" rows="2" class="form-control" placeholder="Soft, buttery banana bread ribboned with brown sugar cinnamon..."></textarea>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="manual-category">Category</label>
+              <select id="manual-category" name="category_id" class="form-control">
+                <option value="">— Select —</option>
+                {categories.map((c: any) => (
+                  <option value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="manual-cuisine">Cuisine</label>
+              <input type="text" id="manual-cuisine" name="cuisine" class="form-control" placeholder="American" />
+            </div>
+            <div class="form-group">
+              <label for="manual-servings">Yield / Servings</label>
+              <input type="text" id="manual-servings" name="servings" class="form-control" placeholder="10–12 slices" />
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="manual-prep">Prep Time (min)</label>
+              <input type="number" id="manual-prep" name="prep_time" class="form-control" min="0" placeholder="15" />
+            </div>
+            <div class="form-group">
+              <label for="manual-cook">Cook Time (min)</label>
+              <input type="number" id="manual-cook" name="cook_time" class="form-control" min="0" placeholder="60" />
+            </div>
+            <div class="form-group">
+              <label for="manual-image">Hero Image URL <span class="field-hint-inline">(optional)</span></label>
+              <input type="url" id="manual-image" name="hero_image_url" class="form-control" placeholder="https://..." />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="manual-ingredients">Ingredients * <span class="field-hint-inline">(one per line)</span></label>
+            <textarea id="manual-ingredients" name="ingredients" rows="7" class="form-control font-mono" required
+              placeholder={"3 very ripe bananas, mashed\n⅓ cup unsalted butter, melted\n¾ cup brown sugar"}></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="manual-instructions">Instructions * <span class="field-hint-inline">(one step per line)</span></label>
+            <textarea id="manual-instructions" name="instructions" rows="7" class="form-control font-mono" required
+              placeholder={"Heat oven to 350°F (175°C) and grease a 9×5-inch loaf pan.\nWhisk mashed bananas, butter, sugar, egg and vanilla until smooth."}></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="manual-intro">Introduction <span class="field-hint-inline">(optional, shown on the recipe page)</span></label>
+            <textarea id="manual-intro" name="introduction" rows="3" class="form-control" placeholder="A few sentences about why this recipe works..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="manual-tips">Pro Tips <span class="field-hint-inline">(optional, one per line)</span></label>
+            <textarea id="manual-tips" name="tips" rows="3" class="form-control font-mono" placeholder="Use heavily speckled bananas for the best flavor."></textarea>
+          </div>
+
+          <div id="manual-error-box" class="pipeline-error-box hidden">
+            <h4>⚠️ Could not create draft</h4>
+            <p id="manual-error-msg"></p>
+          </div>
+
+          <button type="submit" id="btn-manual-submit" class="btn-primary-large">
+            ✍️ Create Draft Recipe
+          </button>
+          <span class="field-hint">Creates a DRAFT you can review, edit and publish from the recipe editor.</span>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
     <!-- PERSISTENT RECENT QUEUE & IMPORT HISTORY TABLE -->
     <!-- ========================================================= -->
     <div class="card recent-queue-card" style="margin-top: 2rem;">
@@ -347,28 +450,105 @@ const recentJobs = db ? await listRecentGenerationJobs(db, 15) : [];
   // Tab Switching
   const tabBulk = document.getElementById('tab-bulk');
   const tabSingle = document.getElementById('tab-single');
+  const tabManual = document.getElementById('tab-manual');
   const sectionBulk = document.getElementById('section-bulk');
   const sectionSingle = document.getElementById('section-single');
+  const sectionManual = document.getElementById('section-manual');
 
-  tabBulk?.addEventListener('click', () => {
-    tabBulk.classList.add('active');
-    tabSingle?.classList.remove('active');
-    sectionBulk?.classList.add('active');
-    sectionSingle?.classList.remove('active');
-  });
+  const allTabs = [tabBulk, tabSingle, tabManual];
+  const allSections = [sectionBulk, sectionSingle, sectionManual];
 
-  tabSingle?.addEventListener('click', () => {
-    tabSingle.classList.add('active');
-    tabBulk?.classList.remove('active');
-    sectionSingle?.classList.add('active');
-    sectionBulk?.classList.remove('active');
-  });
+  function activateTab(tab: HTMLElement | null, section: HTMLElement | null) {
+    allTabs.forEach((t) => t?.classList.remove('active'));
+    allSections.forEach((s) => s?.classList.remove('active'));
+    tab?.classList.add('active');
+    section?.classList.add('active');
+  }
 
-  // Support ?tab=single or ?jobId from URL
+  tabBulk?.addEventListener('click', () => activateTab(tabBulk, sectionBulk));
+  tabSingle?.addEventListener('click', () => activateTab(tabSingle, sectionSingle));
+  tabManual?.addEventListener('click', () => activateTab(tabManual, sectionManual));
+
+  // Support ?tab=single, ?tab=manual or ?jobId from URL
   const initialParams = new URLSearchParams(window.location.search);
-  if (initialParams.get('tab') === 'single' || initialParams.get('jobId')) {
+  if (initialParams.get('tab') === 'manual') {
+    tabManual?.click();
+  } else if (initialParams.get('tab') === 'single' || initialParams.get('jobId')) {
     tabSingle?.click();
   }
+
+  // =========================================================
+  // MANUAL RECIPE ENTRY
+  // =========================================================
+  const manualForm = document.getElementById('manual-recipe-form') as HTMLFormElement;
+  const manualTitle = document.getElementById('manual-title') as HTMLInputElement;
+  const manualSlug = document.getElementById('manual-slug') as HTMLInputElement;
+  const manualErrorBox = document.getElementById('manual-error-box');
+  const manualErrorMsg = document.getElementById('manual-error-msg');
+  const btnManualSubmit = document.getElementById('btn-manual-submit') as HTMLButtonElement;
+  let slugTouched = false;
+
+  function slugifyClient(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/[\s_]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 80);
+  }
+
+  manualSlug?.addEventListener('input', () => { slugTouched = true; });
+  manualTitle?.addEventListener('input', () => {
+    if (!slugTouched && manualSlug) {
+      manualSlug.value = slugifyClient(manualTitle.value);
+    }
+  });
+
+  manualForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    manualErrorBox?.classList.add('hidden');
+    btnManualSubmit.disabled = true;
+    btnManualSubmit.textContent = '⏳ Creating draft...';
+
+    const fd = new FormData(manualForm);
+    const payload = {
+      title: String(fd.get('title') || '').trim(),
+      slug: String(fd.get('slug') || '').trim(),
+      description: String(fd.get('description') || '').trim(),
+      category_id: String(fd.get('category_id') || ''),
+      cuisine: String(fd.get('cuisine') || '').trim(),
+      servings: String(fd.get('servings') || '').trim(),
+      prep_time: String(fd.get('prep_time') || ''),
+      cook_time: String(fd.get('cook_time') || ''),
+      hero_image_url: String(fd.get('hero_image_url') || '').trim(),
+      ingredients: String(fd.get('ingredients') || ''),
+      instructions: String(fd.get('instructions') || ''),
+      introduction: String(fd.get('introduction') || '').trim(),
+      tips: String(fd.get('tips') || ''),
+    };
+
+    try {
+      const res = await fetch('/api/recipes/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
+      window.location.href = `/admin/recipes/${data.recipeId}/`;
+    } catch (err: any) {
+      if (manualErrorMsg) manualErrorMsg.textContent = err?.message || 'Failed to create draft.';
+      manualErrorBox?.classList.remove('hidden');
+      btnManualSubmit.disabled = false;
+      btnManualSubmit.textContent = '✍️ Create Draft Recipe';
+    }
+  });
 
   // =========================================================
   // BULK IMPORT LOGIC
@@ -825,6 +1005,33 @@ const recentJobs = db ? await listRecentGenerationJobs(db, 15) : [];
     max-width: 1100px;
     margin: 0 auto;
     padding-bottom: 4rem;
+  }
+
+  /* Manual entry form layout */
+  .form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .form-row-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 700px) {
+    .form-row-2, .form-row-3 { grid-template-columns: 1fr; }
+  }
+  .field-hint-inline {
+    font-weight: 400;
+    font-size: 0.8rem;
+    color: #71717a;
+  }
+  #manual-recipe-form .btn-primary-large { margin-top: 0.5rem; }
+  #manual-recipe-form .field-hint {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #71717a;
   }
   
   .header-section { margin-bottom: 2rem; }
