@@ -1,32 +1,71 @@
 ---
-export const prerender = false;
+export const prerender = true;
 
+import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Search from '../components/Search.astro';
 import RecipeCard from '../components/RecipeCard.astro';
-import { getPublishedRecipes, getFeaturedRecipe, getCategories } from '../lib/db/recipes';
-import { generateWebSiteSchema, generateOrganizationSchema } from '../lib/seo';
 
-const env = Astro.locals.runtime?.env;
-const db = env?.DB;
-const r2BaseUrl = env?.R2_PUBLIC_URL || '';
-const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+const SITE_URL = 'https://bananabreadrecipe.xyz';
 
-const latestRecipes = db ? await getPublishedRecipes(db, 6) : [];
-const featuredRecipe = db ? await getFeaturedRecipe(db) : null;
-const categories = db ? await getCategories(db) : [];
+const categoryNames: Record<string, string> = {
+  bread: 'Bread', baking: 'Baking', cakes: 'Cakes', desserts: 'Desserts',
+  breakfast: 'Breakfast', cookies: 'Cookies', muffins: 'Muffins',
+};
+
+function toCard(r: any) {
+  return {
+    title: r.data.title,
+    slug: r.slug,
+    description: r.data.description,
+    heroImage: r.data.heroImage,
+    prepTime: r.data.prepTime,
+    cookTime: r.data.cookTime,
+    totalTime: r.data.totalTime,
+    servings: r.data.servings,
+    category: categoryNames[r.data.category] || r.data.category,
+  };
+}
+
+const allRecipes = (await getCollection('recipes')).sort(
+  (a, b) => b.data.pubDate.getTime() - a.data.pubDate.getTime()
+);
+const latestRecipes = allRecipes.slice(0, 6).map(toCard);
+const featuredRecipe = latestRecipes[0] || null;
+
+const catCounts = new Map<string, number>();
+for (const r of allRecipes) catCounts.set(r.data.category, (catCounts.get(r.data.category) || 0) + 1);
+const categories = [...catCounts.entries()].map(([slug, count]) => ({
+  slug, count, name: categoryNames[slug] || slug,
+}));
 
 const title = "BananaBread — Tested Homemade Recipes Worth Baking";
 const description = "Discover foolproof, delicious homemade recipes. From our signature moist banana bread to artisanal loaves and sweet treats.";
 
-const webSiteSchema = generateWebSiteSchema(siteUrl);
-const organizationSchema = generateOrganizationSchema(siteUrl);
+const webSiteSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'BananaBread',
+  url: SITE_URL + '/',
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: SITE_URL + '/search/?q={query}',
+    'query-input': 'required name=query',
+  },
+};
+const organizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'BananaBread',
+  url: SITE_URL + '/',
+  logo: SITE_URL + '/favicon.svg',
+};
 ---
 
 <BaseLayout 
   title={title} 
   description={description}
-  canonical={`${siteUrl.replace(/\/+$/, '')}/`}
+  canonical={`${SITE_URL}/`}
   jsonLd={[webSiteSchema, organizationSchema]}
 >
   <!-- Hero Section -->
@@ -61,7 +100,7 @@ const organizationSchema = generateOrganizationSchema(siteUrl);
               <h2>Recipe of the Week</h2>
             </div>
             <div class="featured-card">
-              <RecipeCard recipe={featuredRecipe} r2BaseUrl={r2BaseUrl} />
+              <RecipeCard recipe={featuredRecipe} />
             </div>
           </section>
         )}
@@ -72,8 +111,8 @@ const organizationSchema = generateOrganizationSchema(siteUrl);
             <h2>Latest Recipes</h2>
           </div>
           <div class="recipe-grid">
-            {latestRecipes.map((recipe) => (
-              <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+            {latestRecipes.map((recipe: any) => (
+              <RecipeCard recipe={recipe} />
             ))}
           </div>
           <div class="view-all-wrapper">

@@ -1,21 +1,10 @@
 ---
-import type { AuthorRecord } from '../lib/db/author';
-
-interface Props {
-  author?: AuthorRecord | null;
-}
-
-const { author } = Astro.props;
-
-if (!author) {
-  return null;
-}
-
-const name = author.name || 'BananaBread Baker';
-const role = author.role_title || 'Recipe Developer & Baker';
-const bio = author.bio || 'Passionate about crafting warm, foolproof homemade banana breads and bakery favorites.';
-const avatar = author.avatar_url;
-const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'BB';
+const name = 'BananaBread Baker';
+const role = 'Recipe Developer & Baker';
+const bio = 'Passionate about crafting warm, foolproof homemade banana breads and bakery favorites. Every recipe is tested in a real home kitchen with exact measurements.';
+const avatar = null;
+const initials = 'BB';
+const author = { social_instagram: null, social_pinterest: 'https://www.pinterest.com/bananabreadrecipe2/', social_facebook: null, social_twitter: null, social_youtube: null, email: null, website_url: null };
 ---
 
 <section class="author-box-card" aria-label="About the Recipe Author">

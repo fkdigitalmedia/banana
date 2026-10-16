@@ -1,33 +1,44 @@
 ---
-export const prerender = false;
+export const prerender = true;
 
+import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import RecipeCard from '../../components/RecipeCard.astro';
 import Search from '../../components/Search.astro';
 import Breadcrumbs from '../../components/Breadcrumbs.astro';
-import { getPublishedRecipes, getCategories, countRecipes } from '../../lib/db/recipes';
 
-const env = Astro.locals.runtime?.env;
-const db = env?.DB;
-const siteUrl = env?.SITE_URL || 'https://yoursite.com';
-const r2BaseUrl = env?.R2_PUBLIC_URL || '';
+const SITE_URL = 'https://bananabreadrecipe.xyz';
 
-const url = new URL(Astro.request.url);
-const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-const pageSize = 12;
-const offset = (page - 1) * pageSize;
+const categoryNames: Record<string, string> = {
+  bread: 'Bread', baking: 'Baking', cakes: 'Cakes', desserts: 'Desserts',
+  breakfast: 'Breakfast', cookies: 'Cookies', muffins: 'Muffins',
+};
 
-const [recipes, totalCount, categories] = await Promise.all([
-  db ? getPublishedRecipes(db, pageSize, offset) : [],
-  db ? countRecipes(db, { status: 'published' }) : 0,
-  db ? getCategories(db) : []
-]);
+function toCard(r: any) {
+  return {
+    title: r.data.title,
+    slug: r.slug,
+    description: r.data.description,
+    heroImage: r.data.heroImage,
+    prepTime: r.data.prepTime,
+    cookTime: r.data.cookTime,
+    totalTime: r.data.totalTime,
+    servings: r.data.servings,
+    category: categoryNames[r.data.category] || r.data.category,
+  };
+}
 
-const totalPages = Math.ceil(totalCount / pageSize) || 1;
+const allRecipes = (await getCollection('recipes')).sort(
+  (a, b) => b.data.pubDate.getTime() - a.data.pubDate.getTime()
+);
+const recipes = allRecipes.map(toCard);
+
+const catSlugs = [...new Set(allRecipes.map((r) => r.data.category))];
+const categories = catSlugs.map((slug) => ({ slug, name: categoryNames[slug] || slug }));
 
 const title = "All Homemade Recipes — BananaBread Recipe Index";
 const description = "Browse our full collection of tested homemade recipes, artisan loaves, sweet baked goods, and foolproof kitchen favorites.";
-const canonical = `${siteUrl.replace(/\/+$/, '')}/recipes/`;
+const canonical = `${SITE_URL}/recipes/`;
 ---
 
 <BaseLayout title={title} description={description} canonical={canonical}>
@@ -70,38 +81,12 @@ const canonical = `${siteUrl.replace(/\/+$/, '')}/recipes/`;
     ) : (
       <>
         <div class="recipe-grid">
-          {recipes.map((recipe) => (
-            <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+          {recipes.map((recipe: any) => (
+            <RecipeCard recipe={recipe} />
           ))}
         </div>
 
-        {totalPages > 1 && (
-          <nav class="pagination" aria-label="Recipe pagination">
-            {page > 1 ? (
-              <a href={`/recipes/?page=${page - 1}`} class="page-link page-prev">← Previous</a>
-            ) : (
-              <span class="page-link disabled">← Previous</span>
-            )}
-
-            <div class="page-numbers">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <a 
-                  href={`/recipes/?page=${p}`} 
-                  class={`page-number ${p === page ? 'active' : ''}`}
-                  aria-current={p === page ? 'page' : undefined}
-                >
-                  {p}
-                </a>
-              ))}
-            </div>
-
-            {page < totalPages ? (
-              <a href={`/recipes/?page=${page + 1}`} class="page-link page-next">Next →</a>
-            ) : (
-              <span class="page-link disabled">Next →</span>
-            )}
-          </nav>
-        )}
+        
       </>
     )}
   </div>

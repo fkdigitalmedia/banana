@@ -3,10 +3,9 @@ import RecipeCard from './RecipeCard.astro';
 
 interface Props {
   recipes: any[];
-  r2BaseUrl: string;
 }
 
-const { recipes, r2BaseUrl } = Astro.props;
+const { recipes } = Astro.props;
 
 if (!recipes || recipes.length === 0) {
   return null;
@@ -24,7 +23,7 @@ const displayRecipes = recipes.slice(0, 6);
     </div>
     <div class="recipe-grid related-grid">
       {displayRecipes.map((recipe) => (
-        <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
+        <RecipeCard recipe={recipe} />
       ))}
     </div>
   </div>

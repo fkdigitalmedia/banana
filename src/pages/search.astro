@@ -1,104 +1,112 @@
 ---
-export const prerender = false;
+export const prerender = true;
 
+import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import RecipeCard from '../components/RecipeCard.astro';
 import Breadcrumbs from '../components/Breadcrumbs.astro';
 import Search from '../components/Search.astro';
-import { searchPublishedRecipes } from '../lib/db/recipes';
 
-const q = Astro.url.searchParams.get('q')?.trim() || '';
-const env = Astro.locals.runtime?.env;
-const db = env?.DB;
-const r2BaseUrl = env?.R2_PUBLIC_URL || '';
-const siteUrl = env?.SITE_URL || 'https://yoursite.com';
+const SITE_URL = 'https://bananabreadrecipe.xyz';
 
-const recipes = (q && db) ? await searchPublishedRecipes(db, q, 24) : [];
+const recipes = (await getCollection('recipes')).map((r) => ({
+  title: r.data.title,
+  slug: r.slug,
+  description: r.data.description,
+  heroImage: r.data.heroImage || '/placeholder-recipe.svg',
+  category: r.data.category,
+  ingredients: r.data.ingredients.join(' '),
+}));
+const indexJson = JSON.stringify(recipes).replace(/</g, '\\u003c');
 
-const title = q ? `"${q}" Recipe Search Results — BananaBread` : 'Search Tested Recipes — BananaBread';
-const description = q ? `Find the best recipes matching "${q}" on BananaBread.` : 'Search our collection of tested baking and cooking recipes.';
+const title = 'Search Tested Recipes — BananaBread';
+const description = 'Search our collection of tested banana bread and baking recipes.';
 ---
 
-<BaseLayout 
-  title={title} 
-  description={description} 
-  noindex={true}
-  canonical={`${siteUrl.replace(/\/+$/, '')}/search/`}
->
+<BaseLayout title={title} description={description} canonical={`${SITE_URL}/search/`} noindex={true}>
   <div class="container page-container">
-    <Breadcrumbs items={[
-      { label: 'Home', href: '/' },
-      { label: 'Search' }
-    ]} />
+    <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Search' }]} />
 
     <header class="search-header">
       <h1>Search Recipes</h1>
       <div class="search-bar-container">
         <Search />
       </div>
-      {q && (
-        <p class="search-results-text">
-          Found <strong>{recipes.length}</strong> {recipes.length === 1 ? 'recipe' : 'recipes'} matching <em>"{q}"</em>
-        </p>
-      )}
+      <p class="search-results-text" id="search-count"></p>
     </header>
 
-    {q && recipes.length === 0 ? (
-      <div class="empty-state">
-        <span class="empty-icon">🔍</span>
-        <h3>No matching recipes found</h3>
-        <p>We couldn't find any published recipes matching <strong>"{q}"</strong>. Try searching for "banana bread", "chocolate", or "muffins".</p>
-        <a href="/" class="btn-home">← Browse All Recipes</a>
-      </div>
-    ) : (
-      <div class="recipe-grid">
-        {recipes.map((recipe) => (
-          <RecipeCard recipe={recipe} r2BaseUrl={r2BaseUrl} />
-        ))}
-      </div>
-    )}
+    <div class="recipe-grid" id="search-results"></div>
+
+    <div class="empty-state hidden" id="search-empty">
+      <span class="empty-icon">🔍</span>
+      <h3>No matching recipes found</h3>
+      <p>Try searching for "banana bread", "chocolate", or "cake".</p>
+      <a href="/recipes/" class="btn-home">← Browse All Recipes</a>
+    </div>
   </div>
 </BaseLayout>
 
-<style>
+<script define:vars={{ indexJson }}>
+  const index = JSON.parse(indexJson);
+  const resultsEl = document.getElementById('search-results');
+  const emptyEl = document.getElementById('search-empty');
+  const countEl = document.getElementById('search-count');
+
+  function card(r) {
+    return `<a href="/${r.slug}/" class="recipe-card">
+      <div class="recipe-card-img-wrapper">
+        <img src="${r.heroImage}" alt="${r.title.replace(/"/g, '')}" loading="lazy" width="400" height="267" class="recipe-card-img" />
+      </div>
+      <div class="recipe-card-content">
+        <h3 class="recipe-card-title">${r.title}</h3>
+        <p class="recipe-card-desc">${r.description.slice(0, 120)}</p>
+      </div>
+    </a>`;
+  }
+
+  function run() {
+    const q = new URLSearchParams(window.location.search).get('q')?.trim().toLowerCase() || '';
+    const box = document.querySelector('.search-bar-container input');
+    if (box && !box.value) box.value = new URLSearchParams(window.location.search).get('q') || '';
+    const hits = q
+      ? index.filter((r) =>
+          (r.title + ' ' + r.description + ' ' + r.ingredients).toLowerCase().includes(q)
+        )
+      : index;
+    resultsEl.innerHTML = hits.map(card).join('');
+    emptyEl.classList.toggle('hidden', hits.length > 0);
+    countEl.innerHTML = q
+      ? `Found <strong>${hits.length}</strong> ${hits.length === 1 ? 'recipe' : 'recipes'} matching <em>"${q}"</em>`
+      : `Showing all <strong>${hits.length}</strong> recipes`;
+  }
+  run();
+</script>
+
+<style is:global>
   .page-container {
     max-width: 1100px;
     margin: 0 auto;
     padding: 2rem 1rem 4rem 1rem;
     min-height: 65vh;
   }
-  
-  .search-header {
-    text-align: center;
-    margin-bottom: 3.5rem;
-  }
-  
+  .search-header { text-align: center; margin-bottom: 3.5rem; }
   .search-header h1 {
     font-family: 'Georgia', serif;
     font-size: 2.75rem;
     color: var(--text-primary);
     margin: 0 0 1.5rem 0;
   }
-  
   .search-bar-container {
     display: flex;
     justify-content: center;
     max-width: 520px;
     margin: 0 auto 1.5rem auto;
   }
-  
-  .search-results-text {
-    font-size: 1.15rem;
-    color: var(--text-secondary);
-    margin: 0;
-  }
-  
+  .search-results-text { font-size: 1.15rem; color: var(--text-secondary); margin: 0; }
   .recipe-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 2rem;
   }
-
   .empty-state {
     text-align: center;
     padding: 4.5rem 2rem;
@@ -108,6 +116,7 @@ const description = q ? `Find the best recipes matching "${q}" on BananaBread.` 
     max-width: 600px;
     margin: 0 auto;
   }
+  .empty-state.hidden { display: none; }
   .empty-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
   .empty-state h3 { font-family: 'Georgia', serif; color: var(--primary); margin: 0 0 0.5rem 0; }
   .empty-state p { color: var(--text-secondary); margin: 0 0 1.5rem 0; line-height: 1.5; }
@@ -118,6 +127,51 @@ const description = q ? `Find the best recipes matching "${q}" on BananaBread.` 
     padding: 0.65rem 1.25rem;
     border-radius: 6px;
     text-decoration: none;
-    font-weight: 600;
+  }
+  /* Recipe cards injected by client-side search (not Astro-scoped) */
+  .recipe-card {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #FFFDF7;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .recipe-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 20px rgba(139, 69, 19, 0.08);
+  }
+  .recipe-card-img-wrapper {
+    position: relative;
+    padding-top: 66.66%;
+    overflow: hidden;
+    background: #FFF8F0;
+  }
+  .recipe-card-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .recipe-card-content { padding: 1.5rem; flex: 1; display: flex; flex-direction: column; }
+  .recipe-card-title {
+    font-family: 'Georgia', serif;
+    font-size: 1.3rem;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+  .recipe-card-desc {
+    color: var(--text-secondary);
+    font-size: 0.925rem;
+    margin: 0;
+    flex: 1;
+    line-height: 1.5;
   }
 </style>

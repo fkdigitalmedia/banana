@@ -1,27 +1,22 @@
 ---
-import { getRecipeImageUrl } from '../lib/image/storage';
-
 interface Props {
   recipe: {
-    id: string | number;
     title: string;
     slug: string;
     description?: string;
-    hero_image_key?: string;
-    original_image_url?: string;
-    prep_time?: number;
-    cook_time?: number;
-    total_time?: number;
-    servings?: string | number;
-    category_name?: string;
+    heroImage?: string;
+    prepTime?: number;
+    cookTime?: number;
+    totalTime?: number;
+    servings?: string;
+    category?: string;
   };
-  r2BaseUrl?: string;
 }
 
-const { recipe, r2BaseUrl } = Astro.props;
-const imageUrl = getRecipeImageUrl({ hero_image_key: recipe.hero_image_key, original_image_url: recipe.original_image_url }, r2BaseUrl);
+const { recipe } = Astro.props;
+const imageUrl = recipe.heroImage || '/placeholder-recipe.svg';
 
-const totalTime = recipe.total_time || ((recipe.prep_time || 0) + (recipe.cook_time || 0));
+const totalTime = recipe.totalTime || ((recipe.prepTime || 0) + (recipe.cookTime || 0));
 
 function formatTime(minutes: number) {
   if (!minutes || minutes <= 0) return '';
@@ -43,8 +38,8 @@ function formatTime(minutes: number) {
       height="267"
       class="recipe-card-img" 
     />
-    {recipe.category_name && (
-      <span class="recipe-card-badge">{recipe.category_name}</span>
+    {recipe.category && (
+      <span class="recipe-card-badge">{recipe.category}</span>
     )}
   </div>
   <div class="recipe-card-content">

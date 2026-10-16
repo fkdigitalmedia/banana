@@ -1,17 +1,14 @@
 ---
-import { getRecipeImageUrl } from '../lib/image/storage';
-
 interface Props {
   title: string;
   description: string;
-  heroImageKey?: string | null;
-  originalImageUrl?: string | null;
-  r2BaseUrl?: string;
+  image?: string | null;
+  imageAlt?: string | null;
 }
 
-const { title, description, heroImageKey, originalImageUrl, r2BaseUrl } = Astro.props;
-const imageUrl = getRecipeImageUrl({ hero_image_key: heroImageKey, original_image_url: originalImageUrl }, r2BaseUrl);
-const altText = `Homemade ${title} freshly prepared and served`;
+const { title, description, image, imageAlt } = Astro.props;
+const imageUrl = image || '/placeholder-recipe.svg';
+const altText = imageAlt || `Homemade ${title} freshly prepared and served`;
 ---
 
 <header class="recipe-hero">
