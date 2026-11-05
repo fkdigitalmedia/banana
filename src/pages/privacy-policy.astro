@@ -6,7 +6,7 @@ const env = (Astro.locals as any).runtime?.env || {};
 const configuredEmail = env.CONTACT_EMAIL || 'hello@bananabreadrecipe.xyz';
 
 const title = "Privacy Policy — BananaBread";
-const description = "Privacy Policy for BananaBread, detailing cookies, Google advertising disclosures, analytics, and your privacy choices.";
+const description = "Privacy Policy for BananaBread, detailing cookies, third-party advertising disclosures, analytics, and your privacy choices.";
 ---
 
 <BaseLayout title={title} description={description}>
@@ -18,7 +18,7 @@ const description = "Privacy Policy for BananaBread, detailing cookies, Google a
 
     <article class="legal-content prose">
       <h1>Privacy Policy</h1>
-      <p class="updated-date">Effective Date: January 1, 2026 | Last Updated: March 2026</p>
+      <p class="updated-date">Effective Date: January 1, 2026 | Last Updated: November 2026</p>
       
       <p class="lead">At BananaBread, we respect your privacy and are committed to transparency about the data we collect, how it is used, and your choices regarding that data.</p>
 
@@ -32,18 +32,17 @@ const description = "Privacy Policy for BananaBread, detailing cookies, Google a
       <h2>2. Cookies & Web Beacons</h2>
       <p>Like most modern websites, BananaBread uses cookies—small text files placed on your device—to ensure site functionality and enhance your reading experience:</p>
       <ul>
-        <li><strong>Essential Cookies:</strong> Required for fundamental site operations (such as session security for administrative users).</li>
+        <li><strong>Essential Cookies:</strong> Required for fundamental site operations (such as security and load balancing).</li>
         <li><strong>Preference Cookies:</strong> Used to remember your recipe preferences (such as ingredient checkbox states stored locally in your browser).</li>
         <li><strong>Analytics Cookies:</strong> Aggregated, non-personally identifiable metrics on page views and popular recipes to help us improve content.</li>
       </ul>
 
-      <h2>3. Google AdSense & Third-Party Advertising Disclosures</h2>
-      <p>BananaBread may partner with third-party advertising vendors, including Google, to serve advertisements when you visit our website. Please review the following disclosures regarding how advertising partners manage data:</p>
+      <h2>3. Third-Party Advertising Disclosures</h2>
+      <p>BananaBread displays advertisements from third-party advertising partners, and uses Google Analytics for aggregated traffic measurement. Please review the following disclosures regarding how advertising partners manage data:</p>
       <ul>
-        <li>Third-party vendors, including Google, use cookies to serve ads based on a user's prior visits to this website or other websites on the Internet.</li>
-        <li>Google's use of advertising cookies enables it and its partners to serve ads to users based on their visits to our site and/or other sites across the Web.</li>
-        <li>Users may opt out of personalized advertising by visiting <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer">Google Ads Settings</a>.</li>
-        <li>Alternatively, users can opt out of third-party vendors' use of cookies for personalized advertising by visiting the <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer">Digital Advertising Alliance Consumer Choice page (www.aboutads.info)</a> or the <a href="https://www.networkadvertising.org/choices/" target="_blank" rel="noopener noreferrer">Network Advertising Initiative (NAI)</a>.</li>
+        <li>Third-party ad vendors may use cookies to serve ads based on a user's prior visits to this website or other websites on the Internet.</li>
+        <li>Users may opt out of personalized advertising from participating vendors by visiting the <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer">Digital Advertising Alliance Consumer Choice page (www.aboutads.info)</a> or the <a href="https://www.networkadvertising.org/choices/" target="_blank" rel="noopener noreferrer">Network Advertising Initiative (NAI)</a>.</li>
+        <li>Users may also manage Google advertising preferences by visiting <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer">Google Ads Settings</a>.</li>
       </ul>
 
       <h2>4. Third-Party Links & Content</h2>
