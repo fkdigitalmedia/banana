@@ -2,6 +2,8 @@
 import '../styles/global.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import AdTop from '../components/AdTop.astro';
+import AdBottom from '../components/AdBottom.astro';
 
 interface Props {
   title: string;
@@ -90,9 +92,11 @@ const shouldNoIndex = Boolean(noindex || isPagesDev);
   </head>
   <body>
     <Header />
+    <AdTop />
     <main id="main-content">
       <slot />
     </main>
+    <AdBottom />
     <Footer />
   </body>
 </html>

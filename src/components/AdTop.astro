@@ -1,0 +1,58 @@
+---
+// Top ad units: 728x90 leaderboard (desktop) + 320x50 banner (mobile).
+// Shown site-wide, directly under the header.
+---
+
+<div class="ad-top">
+  <div class="ad-slot ad-leaderboard">
+    <script is:inline>
+      atOptions = {
+        'key' : 'de2967588ba2864f2f6255772b12d811',
+        'format' : 'iframe',
+        'height' : 90,
+        'width' : 728,
+        'params' : {}
+      };
+    </script>
+    <script is:inline src="https://bauval.org/22/de2967588ba2864f2f6255772b12d811"></script>
+  </div>
+  <div class="ad-slot ad-mobile">
+    <script is:inline>
+      atOptions = {
+        'key' : '7f158a4c81ab1d5f979882489899b3c1',
+        'format' : 'iframe',
+        'height' : 50,
+        'width' : 320,
+        'params' : {}
+      };
+    </script>
+    <script is:inline src="https://bauval.org/22/7f158a4c81ab1d5f979882489899b3c1"></script>
+  </div>
+</div>
+
+<style>
+  .ad-top {
+    display: flex;
+    justify-content: center;
+    padding: 1rem 0.5rem 0;
+    overflow: hidden;
+  }
+  .ad-slot {
+    display: flex;
+    justify-content: center;
+    max-width: 100%;
+  }
+  /* Desktop: leaderboard only */
+  .ad-mobile {
+    display: none;
+  }
+  /* Mobile: 320x50 banner only (728px unit would overflow small screens) */
+  @media (max-width: 767px) {
+    .ad-leaderboard {
+      display: none;
+    }
+    .ad-mobile {
+      display: flex;
+    }
+  }
+</style>
